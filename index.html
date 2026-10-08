@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="シー3Dマップ">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>東京ディズニーシー 3D園内マップ（非公式）</title>
+<meta name="description" content="東京ディズニーシーの園内を、実地図データの3D模型で歩いて確認できる非公式の案内マップ。アトラクション・レストラン・ショップ・トイレまでの最短経路をPOVで再生。">
+<meta name="theme-color" content="#0c1726">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c1726'/%3E%3Cpath d='M5 21c4-3 7-3 11 0s7 3 11 0' stroke='%235cc8d0' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 6l-6 11h12z' fill='%23f2b13a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+</head>
+<body class="plan">
+<canvas id="stage"></canvas>
+<div id="fader"></div>
+<div id="loading"><b>TOKYO DISNEYSEA 3D MAP</b><i></i><span id="loadMsg">園内の模型を組み立てています</span></div>
+
+<!-- 操作パネル -->
+<div id="top">
+  <form id="controls" class="panel" autocomplete="off">
+    <div class="brand"><h1>東京ディズニーシー 3D園内マップ</h1><span>非公式 · 実地図データの模型</span></div>
+    <div class="row pickrow">
+      <div class="field combo">
+        <label for="fromInput">出発地 ▾</label>
+        <div class="cbox"><span class="ic sel none"></span><input id="fromInput" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fromList" placeholder="タップで一覧・名前で検索" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <button type="button" class="iconbtn" id="swapBtn" aria-label="出発地と目的地を入れ替え">⇅</button>
+      <div class="field combo">
+        <label for="toInput">目的地 ▾</label>
+        <div class="cbox"><span class="ic sel none"></span><input id="toInput" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="toList" placeholder="タップで一覧・名前で検索" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <button type="submit" id="goBtn">歩いてみる ▶</button>
+    </div>
+    <div class="row subrow">
+      <div class="chips" id="quick"></div>
+      <div class="seg" id="speedSeg" role="group" aria-label="再生速度">
+        <button type="button" data-v="1">標準</button>
+        <button type="button" data-v="2" aria-pressed="true">高速</button>
+        <button type="button" data-v="3">超高速</button>
+      </div>
+    </div>
+    <div id="err" role="alert"></div>
+  </form>
+
+  <aside id="board" class="panel" aria-live="polite" hidden>
+    <div class="grip" aria-hidden="true"></div>
+    <div class="bhead"><h2>ルート</h2><span class="bbtns"><button type="button" class="closebtn" id="foldBtn" aria-label="ルート一覧を隠す">▾ 隠す</button><button type="button" class="closebtn" id="closeBtn" aria-label="ルートを閉じて最初の画面へ">✕ 閉じる</button></span></div>
+    <div id="summary"></div>
+    <div id="ropts" class="ropts"></div>
+    <details id="stepsBox">
+      <summary>このルートの道順</summary>
+      <ol id="steps"></ol>
+    </details>
+  </aside>
+  <button type="button" id="boardMini" class="panel" hidden aria-label="ルート一覧を開く">
+    <span class="mgrip" aria-hidden="true"></span>
+    <span class="mrow"><b class="mtitle"></b><span class="mmeta mono"></span></span>
+    <span class="mopen">▴ ルート一覧</span>
+  </button>
+</div>
+
+<div id="viewBtns" hidden>
+  <button type="button" class="btn" id="replayBtn">歩いてみる</button>
+  <button type="button" class="btn" id="overviewBtn">ルート全体</button>
+  <button type="button" class="btn" id="homeBtn">最初の画面へ</button>
+</div>
+
+<!-- エリア・表示の切り替え -->
+<div id="side" class="panel">
+  <div id="areas"></div>
+  <div class="sep"></div>
+  <div id="cats"></div>
+  <div class="sep"></div>
+  <div class="tbtns"><button type="button" id="nightBtn" class="tbtn" aria-pressed="false">🌙 夜</button><button type="button" id="locBtn" class="tbtn">📍 現在地</button></div>
+</div>
+
+<!-- 施設をタップしたとき -->
+<div id="pop" class="panel" hidden>
+  <div class="ph"><span class="ic"></span><div><b id="popName"></b><small id="popSub"></small></div></div>
+  <div class="pb">
+    <button type="button" class="btn" id="popFrom">ここから出発</button>
+    <button type="button" class="btn gold" id="popTo">ここへ行く</button>
+  </div>
+</div>
+
+<!-- POV -->
+<div id="pov" hidden>
+  <button type="button" class="btn" id="menuBtn">☰ ルート選択</button>
+  <div id="povBtns">
+    <button type="button" class="btn" id="replayBtn2">もう一度</button>
+    <button type="button" class="btn gold" id="overviewBtn2">ルート全体</button>
+  </div>
+  <div id="player" class="panel">
+    <div class="prow">
+      <button type="button" id="pauseBtn" aria-label="一時停止">❚❚</button>
+      <div id="bar"><i></i></div>
+      <span id="prog" class="mono">0m / 0m</span>
+    </div>
+    <p>画面タップで一時停止・左右スワイプで戻す/進める・上下スワイプで見回す</p>
+  </div>
+  <div id="nav" class="panel">
+    <div id="navIcon">↑</div>
+    <div class="navtxt"><b id="navText">—</b><span id="navNext"></span></div>
+    <div id="navDist" class="mono">0m</div>
+  </div>
+  <div id="mapWrap" class="panel"><canvas id="minimap" width="320" height="320"></canvas><span id="mapLv"></span></div>
+</div>
+
+<footer id="note">
+  個人制作の<b>非公式</b>ツールで、東京ディズニーリゾート・株式会社オリエンタルランド・ディズニー社とは関係ありません。
+  園内の建物・通路・施設の位置は OpenStreetMap の実データから生成（© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, ODbL）。建物の形・色は模型としての推定で、所要時間は目安です。営業状況や運営の変更は公式情報でご確認ください。
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

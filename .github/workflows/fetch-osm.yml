@@ -40,7 +40,7 @@ jobs:
           ls -la data/raw
       - name: Build park.json
         run: |
-          if [ -f tools/build_park.py ]; then pip install numpy; python3 tools/build_park.py --report; fi
+          python3 tools/build_park.py --report
       - name: Commit data
         run: |
           rm -f kanto.osm.pbf
