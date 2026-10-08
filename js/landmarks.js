@@ -85,7 +85,7 @@ export function buildLandmarks(model) {
           return c.multiplyScalar(0.82 + n * 0.35);
         };
         const g = heightfield(outer, holes, model.mobile ? 2.2 : 1.5, hfn, colfn, -0.2);
-        A.stone.p.push(...g.p); A.stone.n.push(...g.n); A.stone.u.push(...g.u); A.stone.c.push(...g.c);
+        A.stone.append(g);
         // 火口の赤い光（夜に強く）
         A.glow.add(new THREE.CircleGeometry(6, 20).rotateX(-Math.PI / 2), M(px, hfn(px, pz) + 0.3, pz), col('#ff6a20'));
         model.labels.push({ text: L.n, pos: new THREE.Vector3(px, L.h + 6, pz), cls: 'lm' });
@@ -239,7 +239,7 @@ export function buildLandmarks(model) {
         const base = [];
         for (let k = 0; k < 16; k++) { const t = (k / 16) * Math.PI * 2; base.push([cx + Math.cos(t) * 14 * (0.85 + 0.25 * fbm(k, 3)), cz + Math.sin(t) * 12 * (0.85 + 0.25 * fbm(k, 7))]); }
         const g = heightfield(base, [], 1.5, (x, z) => 6 * sm(distToRing(x, z, base) / 6) * (0.7 + 0.6 * fbm(x * 0.2, z * 0.2)), (x, z, h) => col('#d98a72').multiplyScalar(0.85 + fbm(x * 0.3, z * 0.3) * 0.3), 0);
-        A.stone.p.push(...g.p); A.stone.n.push(...g.n); A.stone.u.push(...g.u); A.stone.c.push(...g.c);
+        A.stone.append(g);
         model.labels.push({ text: L.n, pos: new THREE.Vector3(cx, L.h + 4, cz), cls: 'lm' });
         break;
       }

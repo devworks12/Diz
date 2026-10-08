@@ -29,9 +29,20 @@ export function fbm(x, z, oct = 4) {
 }
 
 // ---------------------------------------------------------------- 頂点を貯める入れ物
+// 伸びる Float32Array（JS の配列に何百万個も数値を積むとスマホのメモリが足りなくなるため）
+class FArr {
+  constructor(n = 4096) { this.a = new Float32Array(n); this.length = 0; }
+  _grow(k) { if (this.length + k <= this.a.length) return; let n = this.a.length * 2; while (n < this.length + k) n *= 2; const b = new Float32Array(n); b.set(this.a.subarray(0, this.length)); this.a = b; }
+  push(...v) { this._grow(v.length); for (let i = 0; i < v.length; i++) this.a[this.length++] = v[i]; }
+  push3(x, y, z) { this._grow(3); const a = this.a, n = this.length; a[n] = x; a[n + 1] = y; a[n + 2] = z; this.length = n + 3; }
+  push2(x, y) { this._grow(2); this.a[this.length] = x; this.a[this.length + 1] = y; this.length += 2; }
+  append(o) { this._grow(o.length); this.a.set(o.a.subarray(0, o.length), this.length); this.length += o.length; }
+  out() { return this.a.slice(0, this.length); }
+}
 export class Acc {
-  constructor() { this.p = []; this.n = []; this.u = []; this.c = []; }
+  constructor() { this.p = new FArr(); this.n = new FArr(); this.u = new FArr(); this.c = new FArr(); }
   get count() { return this.p.length / 3; }
+  append(o) { this.p.append(o.p); this.n.append(o.n); this.u.append(o.u); this.c.append(o.c); }
   // 三角形（法線 nrm の向きが表になるように並びを直す）
   tri(a, b, c, nrm, ua = [0, 0], ub = [0, 0], uc = [0, 0], color = WHITE, cb = color, cc = color) {
     const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2];
@@ -40,10 +51,11 @@ export class Acc {
     if (nrm && nx * nrm[0] + ny * nrm[1] + nz * nrm[2] < 0) { [b, c] = [c, b]; [ub, uc] = [uc, ub]; [cb, cc] = [cc, cb]; nx = -nx; ny = -ny; nz = -nz; }
     const L = Math.hypot(nx, ny, nz) || 1;
     const N = nrm || [nx / L, ny / L, nz / L];
-    this.p.push(...a, ...b, ...c);
-    this.n.push(...N, ...N, ...N);
-    this.u.push(...ua, ...ub, ...uc);
-    this.c.push(color.r, color.g, color.b, cb.r, cb.g, cb.b, cc.r, cc.g, cc.b);
+    const P = this.p, Nn = this.n, U = this.u, C = this.c;
+    P.push3(a[0], a[1], a[2]); P.push3(b[0], b[1], b[2]); P.push3(c[0], c[1], c[2]);
+    for (let k = 0; k < 3; k++) Nn.push3(N[0], N[1], N[2]);
+    U.push2(ua[0], ua[1]); U.push2(ub[0], ub[1]); U.push2(uc[0], uc[1]);
+    C.push3(color.r, color.g, color.b); C.push3(cb.r, cb.g, cb.b); C.push3(cc.r, cc.g, cc.b);
   }
   quad(a, b, c, d, nrm, ua, ub, uc, ud, color = WHITE, cBottom = null) {
     // cBottom: 下の 2 点（a, b）の色。足もとを暗くして、地面との境を落ち着かせる
@@ -58,22 +70,25 @@ export class Acc {
     const v = new THREE.Vector3(), nm = new THREE.Matrix3().getNormalMatrix(m);
     for (let i = 0; i < P.count; i++) {
       v.fromBufferAttribute(P, i).applyMatrix4(m);
-      this.p.push(v.x, v.y, v.z);
+      this.p.push3(v.x, v.y, v.z);
       v.fromBufferAttribute(Nn, i).applyMatrix3(nm).normalize();
-      this.n.push(v.x, v.y, v.z);
-      if (U) this.u.push(U.getX(i) * uvScale, U.getY(i) * uvScale); else this.u.push(0, 0);
-      if (Cc) this.c.push(Cc.getX(i) * color.r, Cc.getY(i) * color.g, Cc.getZ(i) * color.b);
-      else this.c.push(color.r, color.g, color.b);
+      this.n.push3(v.x, v.y, v.z);
+      if (U) this.u.push2(U.getX(i) * uvScale, U.getY(i) * uvScale); else this.u.push2(0, 0);
+      if (Cc) this.c.push3(Cc.getX(i) * color.r, Cc.getY(i) * color.g, Cc.getZ(i) * color.b);
+      else this.c.push3(color.r, color.g, color.b);
     }
     if (g !== geo) g.dispose();
+    geo.dispose();
   }
   geo() {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.u, 2));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    const free = function () { this.array = null; }; // GPU に送ったら手元のコピーは捨てる
+    g.setAttribute('position', new THREE.BufferAttribute(this.p.out(), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(this.n.out(), 3).onUpload(free));
+    g.setAttribute('uv', new THREE.BufferAttribute(this.u.out(), 2).onUpload(free));
+    g.setAttribute('color', new THREE.BufferAttribute(this.c.out(), 3).onUpload(free));
     g.computeBoundingSphere();
+    this.p = this.n = this.u = this.c = null;
     return g;
   }
 }
@@ -204,8 +219,8 @@ export function heightfield(outer, holes, cell, hfn, colfn, y0 = 0) {
       const c0 = colfn(p[0], p[2], p[1] - y0, n[1]), c1 = colfn(q[0], q[2], q[1] - y0, n[1]), c2 = colfn(r[0], r[2], r[1] - y0, n[1]);
       acc.tri(p, q, r, [0, 1, 0], [p[0] / 6, p[2] / 6 + p[1] / 6], [q[0] / 6, q[2] / 6 + q[1] / 6], [r[0] / 6, r[2] / 6 + r[1] / 6], c0, c1, c2);
       // 法線は面ごと（ごつごつした岩らしく）
-      const k = acc.n.length - 9;
-      for (let t = 0; t < 3; t++) { acc.n[k + t * 3] = n[0]; acc.n[k + t * 3 + 1] = n[1]; acc.n[k + t * 3 + 2] = n[2]; }
+      const k = acc.n.length - 9, na = acc.n.a;
+      for (let t = 0; t < 3; t++) { na[k + t * 3] = n[0]; na[k + t * 3 + 1] = n[1]; na[k + t * 3 + 2] = n[2]; }
       return my;
     };
     if ((i + j) % 2) { tri(a, b, c); tri(a, c, d); } else { tri(a, b, d); tri(b, c, d); }
@@ -267,7 +282,7 @@ export class ParkModel {
     this.buildLamps();
     // 映り込みの描画では、木・街灯・柵などの細かいものを省く
     const w = this.water, orig = w.onBeforeRender;
-    w.onBeforeRender = (...args) => {
+    if (!this._waterSimple) w.onBeforeRender = (...args) => {
       for (const o of this.noReflect) o.visible = false;
       orig.apply(w, args);
       for (const o of this.noReflect) o.visible = true;
@@ -419,16 +434,27 @@ export class ParkModel {
     this.root.add(bed);
     // 水面
     const normals = T.waterNormals();
-    const water = new Water(geo, {
-      textureWidth: this.mobile ? 512 : 1024, textureHeight: this.mobile ? 512 : 1024,
-      waterNormals: normals, sunDirection: new THREE.Vector3(-0.55, 0.62, 0.56).normalize(), sunColor: 0x34342e,
-      waterColor: 0x0f6478, distortionScale: 0.9, fog: true, alpha: 1,
-    });
-    water.material.uniforms.size.value = 8.0;
-    // 映り込みを少し弱め、水の色を濃く（明るい空がそのまま白く映りすぎないように）
-    water.material.fragmentShader = water.material.fragmentShader
-      .replace('( vec3( 0.1 ) + reflectionSample * 0.9 + reflectionSample * specularLight )', '( waterColor * 0.5 + reflectionSample * 0.5 + reflectionSample * specularLight * 0.6 )')
-      .replace('float reflectance = rf0 + ( 1.0 - rf0 ) * pow( ( 1.0 - theta ), 5.0 );', 'float reflectance = rf0 + ( 1.0 - rf0 ) * pow( ( 1.0 - theta ), 5.0 ) * 0.75;');
+    let water;
+    if (this.mobile) {
+      // スマホ: 映り込みの再描画（シーンをもう一度描く）をやめ、空の環境マップの反射とさざ波だけにする
+      normals.repeat.set(5, 5);
+      water = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        color: 0x2a7088, roughness: 0.12, metalness: 0.0, normalMap: normals, normalScale: new THREE.Vector2(0.35, 0.35),
+        envMapIntensity: 1.0,
+      }));
+      this._waterSimple = true;
+    } else {
+      water = new Water(geo, {
+        textureWidth: 1024, textureHeight: 1024,
+        waterNormals: normals, sunDirection: new THREE.Vector3(-0.55, 0.62, 0.56).normalize(), sunColor: 0x34342e,
+        waterColor: 0x0f6478, distortionScale: 0.9, fog: true, alpha: 1,
+      });
+      water.material.uniforms.size.value = 8.0;
+      // 映り込みを少し弱め、水の色を濃く（明るい空がそのまま白く映りすぎないように）
+      water.material.fragmentShader = water.material.fragmentShader
+        .replace('( vec3( 0.1 ) + reflectionSample * 0.9 + reflectionSample * specularLight )', '( waterColor * 0.5 + reflectionSample * 0.5 + reflectionSample * specularLight * 0.6 )')
+        .replace('float reflectance = rf0 + ( 1.0 - rf0 ) * pow( ( 1.0 - theta ), 5.0 );', 'float reflectance = rf0 + ( 1.0 - rf0 ) * pow( ( 1.0 - theta ), 5.0 ) * 0.75;');
+    }
     water.receiveShadow = false;
     water.renderOrder = 0;
     this.root.add(water);
@@ -473,7 +499,7 @@ export class ParkModel {
         return c;
       };
       const part = heightfield(o, hs, cell, hfn, colfn, -0.3);
-      acc.p.push(...part.p); acc.n.push(...part.n); acc.u.push(...part.u); acc.c.push(...part.c);
+      acc.append(part);
     }
     if (!acc.count) return;
     this.mesh(acc.geo(), this.mat({ map: this.tex.rock, vertexColors: true, roughness: 0.97, flatShading: true }));
@@ -924,7 +950,7 @@ export class ParkModel {
         c.set(leafCol).multiplyScalar(1 + (((i * 13) % 11) / 11 - 0.5) * jitter * 4).lerp(YEL, (((i * 31) % 17) / 17) * 0.15);
         lm.setColorAt(i, c);
       });
-      for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
+      for (const im of [tm, lm]) { im.castShadow = !this.mobile; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
     };
     const DET = this.mobile ? 0 : 1;
     const blob = (rad, det, y, sx = 1, sy = 1) => {
@@ -984,7 +1010,7 @@ export class ParkModel {
         tm.setMatrixAt(i, m); lm.setMatrixAt(i, m);
         lm.setColorAt(i, c.set('#5d8a3a').multiplyScalar(1 + (((i * 13) % 11) / 11 - 0.5) * 0.4).lerp(YEL, (((i * 31) % 17) / 17) * 0.15));
       });
-      for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
+      for (const im of [tm, lm]) { im.castShadow = !this.mobile; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
     }
   }
 
@@ -1020,6 +1046,20 @@ export class ParkModel {
     this.noReflect.push(pm, hm);
     this.nightMats.push([hm.material, 'lamp', 1]);
     this.lampPts = pts;
+  }
+
+  // ---------------------------------------------------------------- 水面の動き・夜の色
+  updateWater(dt) {
+    if (this._waterSimple) {
+      const nm = this.water.material.normalMap;
+      nm.offset.x += dt * 0.012; nm.offset.y += dt * 0.007;
+    } else this.water.material.uniforms.time.value += dt * 0.6;
+  }
+  setWaterNight(on) {
+    if (this._waterSimple) { this.water.material.color.set(on ? 0x0a2430 : 0x2a7088); return; }
+    const wu = this.water.material.uniforms;
+    wu.sunColor.value.set(on ? 0x101418 : 0x34342e);
+    wu.waterColor.value.set(on ? 0x061a24 : 0x0f6478);
   }
 
   // ---------------------------------------------------------------- 昼と夜

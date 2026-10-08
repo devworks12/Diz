@@ -23,6 +23,7 @@ addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && ['+', '-', 
 
 const EYE = 1.6;
 const SPEED = { 1: 3, 2: 7, 3: 14 }; // 実時間に対する再生倍率
+let lastLabelKey = '', labelsDirty = true; // ラベルを並べ直す必要があるか
 const state = { from: null, to: null, speed: 2, routes: [], sel: 0, mode: 'plan', pov: null, night: false, cats: new Set(['entrance', 'attr', 'show', 'food', 'shop', 'toilet', 'service']) };
 
 // ---------------------------------------------------------------- データ
@@ -51,8 +52,11 @@ const CATS = {
 
 // ---------------------------------------------------------------- three.js
 const canvas = $('#stage');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE ? 2 : 1.75));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', stencil: true });
+// 画面の細かさ（スマホは重くなりやすいので控えめにし、動きが重いときは自動で下げる）
+const DPR_MAX = Math.min(devicePixelRatio, MOBILE ? 1.6 : 1.75);
+let dpr = DPR_MAX;
+renderer.setPixelRatio(dpr);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
@@ -90,7 +94,7 @@ const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x8a7a5a, 0.55);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(MOBILE ? 2048 : 4096, MOBILE ? 2048 : 4096);
+sun.shadow.mapSize.set(MOBILE ? 1024 : 4096, MOBILE ? 1024 : 4096);
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.6;
 scene.add(sun, sun.target);
@@ -105,7 +109,8 @@ const controls = new MapNav(camera, canvas, {
 });
 const HOME_T = new THREE.Vector3(-60, 0, -10), HOME_P = new THREE.Vector3(260, 720, 860);
 // 縦長の画面では引いて全体を入れる
-if (innerWidth < innerHeight) HOME_P.sub(HOME_T).multiplyScalar(Math.min(1.9, 1.15 * innerHeight / innerWidth)).add(HOME_T);
+// 縦長の画面では、園の長い向き（北西〜南東）が縦になるように南東から見る
+if (innerWidth < innerHeight) { HOME_T.set(-120, 0, -50); HOME_P.set(950, 1450, 500); }
 controls.target.copy(HOME_T);
 camera.position.copy(HOME_P);
 {
@@ -116,7 +121,7 @@ camera.position.copy(HOME_P);
 }
 
 // 後処理: MSAA ＋ ステンシル（水面の部分の地面を抜く）＋ 夜の光のにじみ
-const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: Math.min(4, renderer.capabilities.maxSamples || 4), stencilBuffer: true });
+const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: Math.min(MOBILE ? 2 : 4, renderer.capabilities.maxSamples || 4), stencilBuffer: true });
 const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.12, 0.4, 0.95);
@@ -227,7 +232,7 @@ function updateLabels() {
   for (const L of labels) {
     let show = !pov;
     if (show) {
-      if (L.cls === 'port') show = dist > 160 && dist < 1500;
+      if (L.cls === 'port') show = dist > 160 && dist < 2600;
       else if (L.cls.startsWith('lm')) show = dist < (L.cls.includes('small') ? 380 : 900) && dist > 40;
     }
     let xy = show ? project(L.pos) : null;
@@ -268,6 +273,7 @@ function updateLabels() {
     b.onclick = () => {
       const on = !state.cats.has(k);
       if (on) state.cats.add(k); else state.cats.delete(k);
+      labelsDirty = true;
       b.setAttribute('aria-pressed', String(on));
     };
     cb.appendChild(b);
@@ -278,6 +284,7 @@ function updateLabels() {
 
 // ---------------------------------------------------------------- 昼と夜
 function setNight(on) {
+  labelsDirty = true;
   state.night = on;
   $('#nightBtn').setAttribute('aria-pressed', String(on));
   $('#nightBtn').textContent = on ? '☀ 昼' : '🌙 夜';
@@ -289,13 +296,11 @@ function setNight(on) {
   sun.intensity = on ? 0.35 : 2.6;
   sun.color.set(on ? 0x9ab4ff : 0xfff0d8);
   scene.fog.color.copy(on ? FOG_NIGHT : FOG_DAY);
-  bloom.strength = on ? 0.9 : 0.12;
-  bloom.threshold = on ? 0.55 : 0.95;
+  bloom.strength = 0.9;
+  bloom.threshold = 0.55;
   renderer.toneMappingExposure = on ? 1.0 : 1.0;
   model.setNight(on);
-  const wu = model.water.material.uniforms;
-  wu.sunColor.value.set(on ? 0x101418 : 0x34342e);
-  wu.waterColor.value.set(on ? 0x061a24 : 0x0f6478);
+  model.setWaterNight(on);
 }
 
 // ---------------------------------------------------------------- 現在地（GPS）
@@ -314,6 +319,7 @@ function locate(asFrom) {
     const nr = graph.nearest(x, z);
     if (nr.d > 120) { $('#err').textContent = `現在地がパークの外のようです（園内の通路から約${Math.round(nr.d)}m）。`; return; }
     herePin.on = true;
+    labelsDirty = true;
     herePin.pos.set(x, 1.5, z);
     state.here = { x, z, name: '現在地', id: 'here' };
     flyTo(new THREE.Vector3(x, 0, z), new THREE.Vector3(x + 60, 110, z + 110), 900);
@@ -342,7 +348,23 @@ function setupCombo(side) {
   list.setAttribute('role', 'listbox');
   list.hidden = true;
   document.body.appendChild(list);
-  if (MOBILE) { input.readOnly = true; input.setAttribute('inputmode', 'none'); }
+  // スマホ: 入力欄にはフォーカスさせず（キーボードやスクロールのずれを防ぐ）、一覧の上に検索欄を出す
+  let search = null;
+  const body = document.createElement('div');
+  if (MOBILE) {
+    input.readOnly = true;
+    input.tabIndex = -1;
+    const head = document.createElement('div');
+    head.className = 'lhead';
+    search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = '名前・エリアで検索';
+    search.autocomplete = 'off';
+    search.addEventListener('input', () => render(search.value));
+    head.appendChild(search);
+    list.appendChild(head);
+  }
+  list.appendChild(body);
   let opts = [], active = -1;
   const mkOpt = (key, cat, name, sub, port, dis, cur) => {
     const o = document.createElement('div');
@@ -357,18 +379,18 @@ function setupCombo(side) {
     o.querySelector('.pt').textContent = pc ? pc.name.replace('アメリカンウォーターフロント', 'AWF').replace('メディテレーニアンハーバー', 'メディテ').replace('ファンタジースプリングス', 'ファンタジー') : '';
     o.addEventListener('mousedown', (ev) => { ev.preventDefault(); if (!dis) choose(key); });
     o.addEventListener('click', () => { if (!dis) choose(key); });
-    list.appendChild(o);
+    body.appendChild(o);
     if (!dis) opts.push(o);
   };
   function render(filter) {
     const q = norm(filter);
-    list.innerHTML = '';
+    body.innerHTML = '';
     opts = [];
     const cur = state[side], other = state[side === 'from' ? 'to' : 'from'];
     for (const g of GROUPS) {
       if (g === 'here') {
         if (q && !norm('現在地げんざいち').includes(q)) continue;
-        const h = document.createElement('h3'); h.textContent = '現在地'; list.appendChild(h);
+        const h = document.createElement('h3'); h.textContent = '現在地'; body.appendChild(h);
         mkOpt('here', 'here', '現在地（GPS）', state.here ? '測位済み' : 'タップして位置情報を使う', null, other === 'here', cur === 'here');
         continue;
       }
@@ -376,10 +398,10 @@ function setupCombo(side) {
       if (!its.length) continue;
       const h = document.createElement('h3');
       h.innerHTML = `${esc(CATS[g].label)}<em>${its.length}</em>`;
-      list.appendChild(h);
+      body.appendChild(h);
       for (const p of its) mkOpt(p.id, p.c, p.n, p.sub || '', p.p, p.id === other, p.id === cur);
     }
-    if (!opts.length) list.innerHTML = `<div class="empty">「${esc(filter)}」に一致する場所はありません</div>`;
+    if (!opts.length) body.innerHTML = `<div class="empty">「${esc(filter)}」に一致する場所はありません</div>`;
     active = opts.findIndex((o) => o.dataset.key === cur);
     mark();
   }
@@ -399,27 +421,35 @@ function setupCombo(side) {
   function open(filter) {
     for (const k in combos) if (k !== side) combos[k].close();
     hidePop();
+    if (search) search.value = '';
     render(filter);
     place();
     list.hidden = false;
+    list.scrollTop = 0;
     input.setAttribute('aria-expanded', 'true');
   }
-  function close() { list.hidden = true; input.setAttribute('aria-expanded', 'false'); show(); }
+  function close() { if (list.hidden) return; list.hidden = true; search?.blur(); input.setAttribute('aria-expanded', 'false'); show(); }
   function choose(key) {
-    close(); input.blur();
+    close(); input.blur(); search?.blur();
     if (key === 'here' && !state.here) { locate(side === 'from'); if (side === 'to') state.pendingTo = true; return; }
     setPick(side, key);
   }
   function show() {
     const k = state[side];
     input.value = k ? nameOf(k) : '';
+    input.scrollLeft = 0;
     const ic = input.parentElement.querySelector('.ic');
     ic.outerHTML = k ? icon(catOf(k), ' sel') : '<span class="ic sel none"></span>';
   }
-  input.addEventListener('focus', () => { if (!MOBILE) input.select(); open(''); });
-  input.addEventListener('click', () => { if (list.hidden) open(''); });
-  input.addEventListener('input', () => { open(input.value); active = opts.length ? 0 : -1; mark(); });
-  input.addEventListener('blur', () => setTimeout(() => { if (!list.hidden) close(); }, 150));
+  if (MOBILE) {
+    input.addEventListener('pointerdown', (e) => { e.preventDefault(); if (list.hidden) open(''); else close(); });
+    input.addEventListener('focus', () => input.blur());
+  } else {
+    input.addEventListener('focus', () => { input.select(); open(''); });
+    input.addEventListener('click', () => { if (list.hidden) open(''); });
+    input.addEventListener('input', () => { open(input.value); active = opts.length ? 0 : -1; mark(); });
+    input.addEventListener('blur', () => setTimeout(() => { if (!list.hidden) close(); }, 150));
+  }
   input.addEventListener('keydown', (ev) => {
     if (list.hidden && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) { open(''); ev.preventDefault(); return; }
     if (ev.key === 'ArrowDown') { active = Math.min(opts.length - 1, active + 1); mark(); ev.preventDefault(); }
@@ -438,6 +468,7 @@ document.addEventListener('pointerdown', (e) => {
 });
 
 function setPick(side, key) {
+  labelsDirty = true;
   state[side] = key;
   combos[side].show();
   for (const P of pins) { P.sel = P.p.id === state.from || P.p.id === state.to; P.el.classList.toggle('sel', P.sel); P.el.classList.toggle('from', P.p.id === state.from); }
@@ -459,12 +490,14 @@ $('#swapBtn').onclick = () => {
   combos.from.show(); combos.to.show();
   setPick('from', state.from);
 };
-for (const b of document.querySelectorAll('#speedSeg button')) {
-  b.onclick = () => {
-    state.speed = +b.dataset.v;
-    for (const x of document.querySelectorAll('#speedSeg button')) x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
-  };
+const SPEED_NAME = { 1: '標準', 2: '高速', 3: '超高速' };
+function setSpeed(v) {
+  state.speed = v;
+  for (const x of document.querySelectorAll('#speedSeg button')) x.setAttribute('aria-pressed', +x.dataset.v === v ? 'true' : 'false');
+  $('#speedBtn').textContent = SPEED_NAME[v];
 }
+for (const b of document.querySelectorAll('#speedSeg button')) b.onclick = () => setSpeed(+b.dataset.v);
+$('#speedBtn').onclick = (e) => { e.stopPropagation(); setSpeed((state.speed % 3) + 1); };
 
 // 「最寄りの○○」とおすすめの経路
 function renderQuick() {
@@ -584,6 +617,7 @@ if (window.ResizeObserver) new ResizeObserver(() => layoutUI()).observe($('#cont
 let popFor = null;
 function hidePop() { $('#pop').hidden = true; popFor = null; }
 function showPop(P) {
+  labelsDirty = true;
   const p = P.p;
   popFor = P;
   const pop = $('#pop');
@@ -966,6 +1000,7 @@ function stepFly(now) {
 
 // ---------------------------------------------------------------- POV
 function startPov() {
+  labelsDirty = true;
   const r = state.routes[state.sel];
   if (!r) return;
   hidePop();
@@ -980,10 +1015,11 @@ function startPov() {
   state.pov = { t: 0, paused: false, last: performance.now(), look: null, done: false, port: null, pitch: 0 };
   $('#pauseBtn').textContent = '❚❚';
   povRouteVisuals(true);
-  scene.fog.near = 120; scene.fog.far = 1400;
+  state.fogPov = true;
   camera.fov = 68; camera.updateProjectionMatrix();
 }
 function stopPov() {
+  labelsDirty = true;
   if (state.mode !== 'pov') return;
   state.mode = 'view';
   state.pov = null;
@@ -991,7 +1027,7 @@ function stopPov() {
   $('#pov').hidden = true;
   controls.enabled = true;
   povRouteVisuals(false);
-  scene.fog.near = 900; scene.fog.far = 4200;
+  state.fogPov = false;
   camera.fov = 42; camera.updateProjectionMatrix();
   requestAnimationFrame(layoutUI);
 }
@@ -1119,10 +1155,34 @@ function updateShadow() {
   sun.position.set(cx, 0, cz).addScaledVector(SUN_DIR, 1000);
 }
 
+// ---------------------------------------------------------------- 重さに合わせて画面の細かさを調整
+const perf = { t0: 0, n: 0 };
+function adaptQuality(now) {
+  if (!perf.t0) { perf.t0 = now; perf.n = 0; return; }
+  perf.n++;
+  const el = now - perf.t0;
+  if (el < 2000) return;
+  const ms = el / perf.n;
+  perf.t0 = now; perf.n = 0;
+  let next = dpr;
+  if (ms > 38 && dpr > 1) next = Math.max(1, dpr - 0.25);
+  else if (ms < 20 && dpr < DPR_MAX) next = Math.min(DPR_MAX, dpr + 0.25);
+  if (next !== dpr) { dpr = next; renderer.setPixelRatio(dpr); composer.setPixelRatio(dpr); resize(); }
+}
+
 // ---------------------------------------------------------------- ループ
 let last = performance.now();
+// GPU のメモリ不足などで描画できなくなったときは知らせる（画面が止まったまま操作できないように見えるのを防ぐ）
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  $('#err').textContent = '3D表示が止まりました（端末のメモリ不足の可能性）。ページを再読み込みしてください。';
+});
+let loopErr = false;
 function loop(now) {
   requestAnimationFrame(loop);
+  try { frame(now); } catch (e) { if (!loopErr) { loopErr = true; console.error(e); } }
+}
+function frame(now) {
   // requestAnimationFrame の時刻は performance.now() より前のことがある（負の dt で視点のずれが発散しないように）
   const dt = Math.max(0.001, Math.min(0.05, (now - last) / 1000)) || 1 / 60;
   last = now;
@@ -1141,13 +1201,20 @@ function loop(now) {
   }
   updateViewOffset(dt);
   updateShadow();
-  model.water.material.uniforms.time.value += dt * 0.6;
+  model.updateWater(dt);
+  // 霧は見ている距離に合わせる（引いて見ても遠くがかすみすぎないように）
+  if (state.fogPov) { scene.fog.near = 120; scene.fog.far = 1400; }
+  else { const d = camera.position.distanceTo(controls.target); scene.fog.near = Math.max(700, d * 1.1); scene.fog.far = Math.max(3200, d * 4); }
   for (const s of model.landmarks.spin) s.rotation.y += dt * 0.25;
   const nearWant = state.mode === 'pov' ? 0.2 : THREE.MathUtils.clamp(camera.position.distanceTo(controls.target) * 0.015, 0.5, 20);
   if (Math.abs(camera.near - nearWant) > camera.near * 0.15) { camera.near = nearWant; camera.updateProjectionMatrix(); }
-  composer.render();
-  updateLabels();
-  placePop();
+  // 昼は直接描く（速い）。夜だけ光のにじみ（ブルーム）のために後処理を通す
+  if (state.night) composer.render(); else renderer.render(scene, camera);
+  adaptQuality(now);
+  // ラベルは視点が動いたときだけ並べ直す
+  camera.updateMatrixWorld();
+  const key = camera.matrixWorld.elements.join() + (camera.view?.offsetX || 0) + (camera.view?.offsetY || 0) + innerWidth + innerHeight;
+  if (key !== lastLabelKey || labelsDirty) { lastLabelKey = key; labelsDirty = false; updateLabels(); placePop(); }
 }
 requestAnimationFrame(loop);
 layoutUI();
