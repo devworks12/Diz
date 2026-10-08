@@ -2,7 +2,7 @@
 // どれも実在の建物の大まかな形・大きさ・色に合わせた「模型」で、細部やキャラクターは再現しない
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Acc, heightfield, fbm, obb, ringArea, centroid, distToRing, offsetRing, flatGeo, WATER_Y } from './model.js';
+import { Acc, heightfield, fbm, obb, ringArea, centroid, distToRing, offsetRing, flatGeo, WATER_Y } from './model.js?v=202610090047';
 
 const ring = (f) => { const o = []; for (let i = 0; i < f.length; i += 2) o.push([f[i], f[i + 1]]); return o; };
 const col = (h) => new THREE.Color(h);

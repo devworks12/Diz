@@ -293,3 +293,6 @@ body.pov .pin,body.pov .lbl{display:none}
   .lbl.port{font-size:12.5px}
   #side button{padding:5px 7px}
 }
+
+#ver{position:fixed;z-index:8;left:8px;bottom:calc(4px + var(--safe-b));font:500 9px "JetBrains Mono",monospace;color:rgba(255,255,255,.55);text-shadow:0 1px 2px #000;pointer-events:none}
+body.pov #ver{display:none}

@@ -1,6 +1,6 @@
 // 東京ディズニーシー 3D園内マップ — 画面・カメラ・POV
 import * as THREE from 'three';
-import { MapNav } from './nav.js';
+import { MapNav } from './nav.js?v=202610090047';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -9,11 +9,13 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { ParkModel } from './model.js';
-import { Graph } from './route.js';
-import { ICON, navIcon } from './icons.js';
+import { ParkModel } from './model.js?v=202610090047';
+import { Graph } from './route.js?v=202610090047';
+import { ICON, navIcon } from './icons.js?v=202610090047';
 
 const $ = (s) => document.querySelector(s);
+// 版（tools/bump_version.py が付ける ?v=）。新しい版が表示されているか確かめられるように画面の隅に出す
+const VERSION = new URL(import.meta.url).searchParams.get('v') || 'dev';
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 760;
 
 // ---------------------------------------------------------------- アプリらしい操作（ページ全体のズームを止める）
@@ -1317,6 +1319,7 @@ function frame(now) {
 }
 requestAnimationFrame(loop);
 layoutUI();
+{ const vb = document.createElement('span'); vb.id = 'ver'; vb.textContent = 'v' + VERSION; document.body.appendChild(vb); }
 $('#loading').style.opacity = 0;
 setTimeout(() => $('#loading').remove(), 500);
 

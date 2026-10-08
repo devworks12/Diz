@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Water } from 'three/addons/objects/Water.js';
-import * as T from './textures.js';
-import { buildLandmarks } from './landmarks.js';
+import * as T from './textures.js?v=202610090047';
+import { buildLandmarks } from './landmarks.js?v=202610090047';
 
 export const WATER_Y = -0.6;
 const UP = new THREE.Vector3(0, 1, 0);
