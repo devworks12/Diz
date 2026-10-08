@@ -3,6 +3,8 @@
 東京ディズニーシーの園内を、OpenStreetMap の実データから作った3D模型で見渡し、アトラクション・レストラン・ショップ・トイレまでの最短経路を一人称（POV）で歩いて確認できる静的Webページです。
 新宿駅乗り換え3D（[Shinjuku](https://github.com/devworks12/Shinjuku)）と同じ作り方の、テーマパーク版です。
 
+**公開ページ: https://devworks12.github.io/Diz/**
+
 - 地図データ: © OpenStreetMap contributors（ODbL）
 - 建物の形・高さ・色、経路と所要時間は、地図データからの推定を含む「模型」です。
 
