@@ -470,7 +470,7 @@ export class ParkModel {
   // ---------------------------------------------------------------- 建物
   buildBuildings() {
     const d = this.d;
-    const walls = {}, roofs = new Acc(), trims = new Acc(), flats = new Acc(), glassA = new Acc();
+    const walls = {}, roofs = new Acc(), trims = new Acc(), flats = new Acc(), rockWalls = new Acc();
     const GH = 4.2, FH = 3.6, BAY = 4.0;
     const rnd = T.rng(99);
     this.buildingLabels = [];
@@ -530,6 +530,20 @@ export class ParkModel {
           for (const t of [0.2, 0.5, 0.8]) if (this.pathIdx.dist(a[0] + (bq[0] - a[0]) * t + nx * 4, a[1] + (bq[1] - a[1]) * t + nz * 4) < 9) near++;
           plain = near < 2;
         }
+        // 自然のエリア（ファンタジースプリングス・ロストリバー・ミステリアスアイランド）の大きな建物は、通路側を岩山に見せる
+        if (!plain && b.big && (b.s === 'fs' || b.s === 'lrd' || b.s === 'mi')) {
+          const rc = col(ROCK[b.p] || '#9a9088');
+          const n = Math.max(1, Math.round(L / 3.5));
+          for (let k = 0; k < n; k++) {
+            const t0 = k / n, t1 = (k + 1) / n;
+            const ax = a[0] + (bq[0] - a[0]) * t0, az = a[1] + (bq[1] - a[1]) * t0, bx = a[0] + (bq[0] - a[0]) * t1, bz = a[1] + (bq[1] - a[1]) * t1;
+            const ha = h * (0.78 + 0.22 * hash2(Math.round(ax * 3), Math.round(az * 3))), hb = h * (0.78 + 0.22 * hash2(Math.round(bx * 3), Math.round(bz * 3)));
+            const jo = (x, z) => (hash2(Math.round(x * 7), Math.round(z * 7)) - 0.5) * 1.6;
+            rockWalls.quad([ax, mh, az], [bx, mh, bz], [bx + nx * jo(bx, bz), hb, bz + nz * jo(bx, bz)], [ax + nx * jo(ax, az), ha, az + nz * jo(ax, az)], [nx, 0, nz],
+              [t0 * L / 6, 0], [t1 * L / 6, 0], [t1 * L / 6, hb / 6], [t0 * L / 6, ha / 6], rc.clone().multiplyScalar(0.85 + 0.3 * hash2(k, Math.round(ax))));
+          }
+          continue;
+        }
         const acc = plain ? accPlain : accThemed;
         const C = plain ? wallC : (b.big ? col(pick(pal.walls)) : wallC);
         // スパンの数を整数にして、窓が辺の途中で切れないように
@@ -580,7 +594,7 @@ export class ParkModel {
         const par = b.big ? 0.6 : h < 7 ? 0.35 : 0.9;
         this.extrude(trims, cor, corY + 0.18, corY + par, () => (b.big ? wallC : trimC), null);
         const cap = flatGeo(cor, [], corY + par - 0.25, 1 / 4);
-        flats.add(cap, new THREE.Matrix4(), b.big ? col('#c4beb2') : roofC.clone().lerp(col('#c8c4ba'), 0.55));
+        flats.add(cap, new THREE.Matrix4(), b.big ? ((b.s === 'fs' || b.s === 'lrd' || b.s === 'mi') ? col('#5d7448') : col('#c4beb2')) : roofC.clone().lerp(col('#c8c4ba'), 0.55));
         // アラビアンコースト: 中くらいの建物の一部にドーム
         if (b.s === 'arab' && !b.big && A > 50 && A < 1500 && rnd() < 0.45) {
           const rad = Math.min(short * 0.32, 7);
@@ -617,6 +631,7 @@ export class ParkModel {
       this.nightMats.push([m, 'emissive', st === 'plain' ? 0 : 1]);
       this.mesh(acc.geo(), m);
     }
+    if (rockWalls.count) this.mesh(rockWalls.geo(), this.mat({ map: this.tex.rock, vertexColors: true, roughness: 0.97, flatShading: true, side: THREE.DoubleSide }));
     const roofTex = this.roofTex();
     this.mesh(roofs.geo(), this.mat({ map: roofTex, vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }));
     this.mesh(trims.geo(), this.mat({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));

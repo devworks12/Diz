@@ -100,10 +100,12 @@ scene.fog = new THREE.Fog(FOG_DAY, 900, 4200);
 // 地図アプリと同じ操作（1本指=移動、2本指=拡大・回転、2本指上下=傾き）。詳しくは js/nav.js
 let fly = null;
 const controls = new MapNav(camera, canvas, {
-  minDistance: 8, maxDistance: 1600, maxPolarAngle: Math.PI * 0.44,
+  minDistance: 8, maxDistance: 2400, maxPolarAngle: Math.PI * 0.44,
   onStart: () => { fly = null; hideHint(); state.userMoved = true; hidePop(); },
 });
 const HOME_T = new THREE.Vector3(-60, 0, -10), HOME_P = new THREE.Vector3(260, 720, 860);
+// 縦長の画面では引いて全体を入れる
+if (innerWidth < innerHeight) HOME_P.sub(HOME_T).multiplyScalar(Math.min(1.9, 1.15 * innerHeight / innerWidth)).add(HOME_T);
 controls.target.copy(HOME_T);
 camera.position.copy(HOME_P);
 {

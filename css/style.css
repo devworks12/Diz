@@ -211,8 +211,9 @@ body.pov .pin,body.pov .lbl{display:none}
   #controls{padding:9px 10px;gap:7px;width:100%}
   .brand h1{font-size:14.5px}
   .brand span{display:none}
-  .row.pickrow{flex-wrap:wrap}
-  .pickrow .field{flex:1 1 40%}
+  .row.pickrow{flex-wrap:nowrap;gap:6px}
+  .pickrow .field{flex:1 1 0;min-width:0}
+  #goBtn .gl{display:none}
   .field label{font-size:10px}
   #swapBtn{width:32px;height:36px}
   #goBtn{height:36px;padding:0 10px;font-size:13px}
