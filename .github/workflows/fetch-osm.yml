@@ -1,0 +1,53 @@
+name: Update park data
+
+# 東京ディズニーシー周辺の OSM データを Geofabrik の関東抽出から切り出してコミットする
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/fetch-osm.yml
+  schedule:
+    - cron: "23 3 1 * *"   # 毎月1日
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fetch-osm
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install osmium
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      - name: Download Kanto extract
+        run: |
+          curl -fsSL --retry 3 -o kanto.osm.pbf https://download.geofabrik.de/asia/japan/kanto-latest.osm.pbf
+          ls -la kanto.osm.pbf
+      - name: Cut TDS bbox
+        run: |
+          mkdir -p data/raw
+          # west,south,east,north
+          osmium extract -b 139.8740,35.6170,139.8960,35.6360 --strategy smart \
+            -S types=multipolygon,route,site,boundary \
+            kanto.osm.pbf -o data/raw/tds.osm.pbf --overwrite
+          osmium fileinfo -g header.option.osmosis_replication_timestamp kanto.osm.pbf > data/raw/timestamp.txt || true
+          osmium cat data/raw/tds.osm.pbf -o data/raw/tds.osm.gz --overwrite
+          ls -la data/raw
+      - name: Build park.json
+        run: |
+          if [ -f tools/build_park.py ]; then pip install numpy; python3 tools/build_park.py --report; fi
+      - name: Commit data
+        run: |
+          rm -f kanto.osm.pbf
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then echo "no changes"; exit 0; fi
+          git commit -m "data: 東京ディズニーシー周辺のOSMデータを更新"
+          git pull --rebase origin main
+          git push origin HEAD:main
