@@ -733,7 +733,7 @@ for e in C.ENTRANCES:
             continue
         q = dict(q, ring=None)
     n, d, _x, _z = connect(q)
-    POIS.append({"c": "entrance", "n": e["name"], "sub": e["sub"], "p": port_at(q["x"], q["z"]), "x": R(q["x"]), "z": R(q["z"]), "g": n, "key": e["key"]})
+    POIS.append({"c": "entrance", "n": e["name"], "sub": e["sub"], "p": e.get("port") or port_at(q["x"], q["z"]), "x": R(q["x"]), "z": R(q["z"]), "g": n, "key": e["key"]})
 
 # 名前の無い施設（トイレ・ワゴン）には近くの目印を添える
 named = [p for p in POIS if p["c"] in ("attr", "food", "shop", "show") and p["n"] and "ワゴン" not in p["n"] and "ポップコーン" not in p["n"] and "販売機" not in p["n"]]

@@ -45,9 +45,11 @@ export class Acc {
     this.u.push(...ua, ...ub, ...uc);
     this.c.push(color.r, color.g, color.b, cb.r, cb.g, cb.b, cc.r, cc.g, cc.b);
   }
-  quad(a, b, c, d, nrm, ua, ub, uc, ud, color = WHITE) {
-    this.tri(a, b, c, nrm, ua, ub, uc, color);
-    this.tri(a, c, d, nrm, ua, uc, ud, color);
+  quad(a, b, c, d, nrm, ua, ub, uc, ud, color = WHITE, cBottom = null) {
+    // cBottom: 下の 2 点（a, b）の色。足もとを暗くして、地面との境を落ち着かせる
+    const cb = cBottom || color;
+    this.tri(a, b, c, nrm, ua, ub, uc, cb, cb, color);
+    this.tri(a, c, d, nrm, ua, uc, ud, cb, color, color);
   }
   // three.js の形を（変換して）足す
   add(geo, m, color = WHITE, uvScale = 1) {
@@ -76,6 +78,7 @@ export class Acc {
   }
 }
 const WHITE = new THREE.Color(1, 1, 1);
+const YEL = new THREE.Color('#9a9a3a');
 
 // 平らな面（穴あき）。shape は (x, -z) で作り、寝かせて y の高さに置く。uv は 1 m = uvScale
 export function flatGeo(o, holes, y, uvScale = 1) {
@@ -558,7 +561,17 @@ export class ParkModel {
         // スパンの数を整数にして、窓が辺の途中で切れないように
         const nb = plain ? L / 8 : Math.max(1, Math.round(L / BAY));
         const u0 = 0, u1 = L < 2.2 && !plain ? 0.35 : nb;
+        const Cb = C.clone().multiplyScalar(0.6);
         for (const [y0, y1, v0, v1] of plain ? plainBands : bands) {
+          if (y0 < 0.1 && y1 > 1.6) {
+            // 足もと 1m は下ほど暗く（地面との境の陰）
+            const ym = y0 + 1.0, vm = v0 + (v1 - v0) * (1.0 / (y1 - y0));
+            acc.quad([a[0], y0, a[1]], [bq[0], y0, bq[1]], [bq[0], ym, bq[1]], [a[0], ym, a[1]], [nx, 0, nz],
+              [u0, v0], [u1, v0], [u1, vm], [u0, vm], C, Cb);
+            acc.quad([a[0], ym, a[1]], [bq[0], ym, bq[1]], [bq[0], y1, bq[1]], [a[0], y1, a[1]], [nx, 0, nz],
+              [u0, vm], [u1, vm], [u1, v1], [u0, v1], C);
+            continue;
+          }
           acc.quad([a[0], y0, a[1]], [bq[0], y0, bq[1]], [bq[0], y1, bq[1]], [a[0], y1, a[1]], [nx, 0, nz],
             [u0, v0], [u1, v0], [u1, v1], [u0, v1], C);
         }
@@ -818,7 +831,25 @@ export class ParkModel {
         acc.add(g, m, c, 1 / 3);
       }
     };
-    for (const p of L.wall || []) box(wall, ring(p), 0.45, 0, 1.4, col('#c8bca8'));
+    // 塀・手すり壁: 側面 2 枚と上面（石の模様が伸びないように、長さに合わせて uv を取る）
+    const wallLine = (acc, pts, w, hgt, c) => {
+      let s0 = 0;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+        const len = Math.hypot(bx - ax, bz - az);
+        if (len < 0.05) continue;
+        const nx = (-(bz - az) / len) * (w / 2), nz = ((bx - ax) / len) * (w / 2);
+        const u0 = s0 / 2, u1 = (s0 + len) / 2, v1 = hgt / 2;
+        const top = c.clone().multiplyScalar(1.08), bot = c.clone().multiplyScalar(0.7);
+        for (const sg of [1, -1]) {
+          const ox = nx * sg, oz = nz * sg;
+          acc.quad([ax + ox, 0, az + oz], [bx + ox, 0, bz + oz], [bx + ox, hgt, bz + oz], [ax + ox, hgt, az + oz], [sg * nx / (w / 2), 0, sg * nz / (w / 2)], [u0, 0], [u1, 0], [u1, v1], [u0, v1], c, bot);
+        }
+        acc.quad([ax + nx, hgt, az + nz], [bx + nx, hgt, bz + nz], [bx - nx, hgt, bz - nz], [ax - nx, hgt, az - nz], [0, 1, 0], [u0, 0], [u1, 0], [u1, 0.2], [u0, 0.2], top);
+        s0 += len;
+      }
+    };
+    for (const p of L.wall || []) wallLine(wall, ring(p), 0.4, 1.05, col('#d9cbb2'));
     for (const p of L.hedge || []) box(hedge, ring(p), 0.9, 0, 1.2, col('#4f7a3a'));
     for (const p of L.fence || []) box(fence, ring(p), 0.06, 0, 1.1, col('#3c3a36'));
     // ディズニーシー・エレクトリックレールウェイ（高架）
@@ -847,7 +878,7 @@ export class ParkModel {
         acc = (acc + len) % 14;
       }
     }
-    if (wall.count) this.mesh(wall.geo(), this.mat({ map: this.tex.stone, vertexColors: true }));
+    if (wall.count) this.mesh(wall.geo(), this.mat({ map: this.tex.stone, vertexColors: true, side: THREE.DoubleSide }));
     if (hedge.count) this.mesh(hedge.geo(), this.mat({ map: this.tex.soil, vertexColors: true, roughness: 1 }));
     if (fence.count) this.noReflect.push(this.mesh(fence.geo(), this.mat({ vertexColors: true, roughness: 0.5, metalness: 0.4 }), { cast: false }));
     if (track.count) this.mesh(track.geo(), this.mat({ map: this.tex.stone, vertexColors: true, roughness: 0.85 }));
@@ -874,7 +905,7 @@ export class ParkModel {
     const leafMat = this.mat({ vertexColors: true, roughness: 0.85, flatShading: true });
     leafMat.onBeforeCompile = (sh) => {
       // 葉は光を少し通す（逆光で真っ黒にならないように）
-      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.18;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * 0.3;');
     };
     const barkMat = this.mat({ color: 0x6a5240, roughness: 1 });
     const make = (list, trunkGeo, leafGeo, leafCol, jitter = 0.12) => {
@@ -889,7 +920,8 @@ export class ParkModel {
         p.set(x, 0, z);
         m.compose(p, q, sc);
         tm.setMatrixAt(i, m); lm.setMatrixAt(i, m);
-        c.set(leafCol).offsetHSL((((i * 31) % 17) / 17 - 0.5) * 0.04, 0, (((i * 13) % 11) / 11 - 0.5) * jitter * 2);
+        // 色のばらつき（明るさと、少し黄色み）。offsetHSL は線形の色空間で働くので使わない
+        c.set(leafCol).multiplyScalar(1 + (((i * 13) % 11) / 11 - 0.5) * jitter * 4).lerp(YEL, (((i * 31) % 17) / 17) * 0.15);
         lm.setColorAt(i, c);
       });
       for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
@@ -950,7 +982,7 @@ export class ParkModel {
       kinds.palm.forEach(([x, z, s, a], i) => {
         q.setFromAxisAngle(UP, a); sc.setScalar(s); p.set(x, 0, z); m.compose(p, q, sc);
         tm.setMatrixAt(i, m); lm.setMatrixAt(i, m);
-        lm.setColorAt(i, c.set('#5d8a3a').offsetHSL(0, 0, (((i * 13) % 11) / 11 - 0.5) * 0.12));
+        lm.setColorAt(i, c.set('#5d8a3a').multiplyScalar(1 + (((i * 13) % 11) / 11 - 0.5) * 0.4).lerp(YEL, (((i * 31) % 17) / 17) * 0.15));
       });
       for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
     }

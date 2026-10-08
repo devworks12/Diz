@@ -487,9 +487,11 @@ function nearest(cat) {
   const base = state.from || (state.here ? 'here' : null);
   if (!base) { $('#err').textContent = '先に「出発地」を選ぶか、📍 現在地 を押してください。'; combos.from.open(''); return; }
   const key = base === 'here' ? state.here : base;
-  const near = graph.nearestOf(key, cat, 1)[0];
+  const list = graph.nearestOf(key, cat, 4);
+  const near = list[0];
   if (!near) return;
   if (!state.from) { state.from = 'here'; combos.from.show(); }
+  state.nearList = { cat, from: state.from, list };
   setPick('to', near.p.id);
 }
 renderQuick();
@@ -650,6 +652,23 @@ function renderBoard() {
     <div class="meta cnt"></div>`;
   sm.querySelector('.n1').textContent = nameOf(state.from);
   sm.querySelector('.n2').textContent = nameOf(state.to);
+  const toP = poiBy[state.to];
+  if (toP?.sub) { const sb = document.createElement('small'); sb.textContent = toP.sub; sm.querySelector('.n2').appendChild(sb); }
+  // 「最寄りの○○」で選んだときは、ほかの近い候補も出す
+  const nl = state.nearList;
+  if (nl && nl.from === state.from && nl.list.some((x) => x.p.id === state.to)) {
+    const box = document.createElement('div');
+    box.className = 'alts';
+    for (const x of nl.list) {
+      if (x.p.id === state.to) continue;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = `${x.p.c === 'toilet' ? 'トイレ（' + (x.p.sub || '') + '）' : x.p.n}・約${Math.max(1, Math.round(x.t / 60))}分`;
+      b.onclick = () => setPick('to', x.p.id);
+      box.appendChild(b);
+    }
+    if (box.children.length) { const lab = document.createElement('div'); lab.className = 'meta'; lab.textContent = 'ほかの近い候補'; sm.append(lab, box); }
+  }
   sm.querySelector('.big').textContent = `約${Math.round(r0.dist / 10) * 10}m`;
   sm.querySelector('.tm').textContent = `徒歩の目安 約${Math.max(1, Math.round(r0.time / 60))}分`;
   sm.querySelector('.cnt').textContent = state.routes.length > 1 ? `ルート候補 ${state.routes.length} 本（押すと切り替わります）` : '';
@@ -869,10 +888,13 @@ function fitRoute() {
   const box = new THREE.Box3();
   for (const p of r.pts) box.expandByPoint(p);
   const c = box.getCenter(new THREE.Vector3());
-  const size = Math.max(140, box.getSize(new THREE.Vector3()).length());
+  const len = box.getSize(new THREE.Vector3()).length();
+  const size = Math.max(170, len);
   const fr = freeRect();
   const k = Math.max(innerHeight / Math.max(120, fr.h), (innerWidth / Math.max(160, fr.w)) * 0.75);
-  const off = new THREE.Vector3(0.35, 1.0, 0.85).normalize().multiplyScalar(size * 0.9 * Math.min(3.2, Math.max(1, k)));
+  // 短い経路は真上に近い角度から（手前の建物で隠れないように）
+  const dir = len < 250 ? new THREE.Vector3(0.25, 1.7, 0.6) : new THREE.Vector3(0.35, 1.0, 0.85);
+  const off = dir.normalize().multiplyScalar(size * 0.9 * Math.min(3.2, Math.max(1, k)));
   flyTo(c, c.clone().add(off), 900);
 }
 function freeRect() {
@@ -1116,4 +1138,4 @@ if (hash.includes('>')) {
   const [f, t] = hash.split('>');
   if (poiBy[f] && poiBy[t]) { state.from = f; combos.from.show(); setPick('to', t); }
 }
-window.__app = { state, data, camera, controls, scene, renderer, composer, bloom, go, setPick, startPov, stopPov, fitRoute, model, graph, selectRoute, setNight, flyTo, sun };
+window.__app = { THREE, state, data, camera, controls, scene, renderer, composer, bloom, go, setPick, startPov, stopPov, fitRoute, model, graph, selectRoute, setNight, flyTo, sun };
