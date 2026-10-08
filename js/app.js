@@ -120,18 +120,25 @@ camera.position.copy(HOME_P);
   controls.bounds = { xmin: x0 - 80, xmax: x1 + 80, zmin: z0 - 80, zmax: z1 + 80 };
 }
 
-// 後処理: MSAA ＋ ステンシル（水面の部分の地面を抜く）＋ 夜の光のにじみ
-const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: Math.min(MOBILE ? 2 : 4, renderer.capabilities.maxSamples || 4), stencilBuffer: true });
-const composer = new EffectComposer(renderer, rt);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.12, 0.4, 0.95);
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
+// 後処理（夜の光のにじみ）。メモリを使うので、夜にしたときに初めて作る
+let composer = null;
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.9, 0.4, 0.55);
+function getComposer() {
+  if (composer) return composer;
+  const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: Math.min(MOBILE ? 2 : 4, renderer.capabilities.maxSamples || 4), stencilBuffer: true });
+  composer = new EffectComposer(renderer, rt);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+  composer.setPixelRatio(dpr);
+  composer.setSize(innerWidth, innerHeight);
+  return composer;
+}
 
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
-  composer.setSize(w, h);
+  composer?.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -1071,7 +1078,8 @@ function stepPov(now) {
   if (r.dist - s < 4) _tgt.copy(r.at(r.dist)).add(r.dirAt(r.dist).multiplyScalar(9));
   const hd = Math.hypot(_tgt.x - pos.x, _tgt.z - pos.z) || 1;
   _tgt.y = pos.y + EYE + Math.max(-hd * 0.25, Math.min(hd * 0.25, _tgt.y - pos.y)) + Math.tan(pv.pitch) * hd;
-  if (!pv.look) pv.look = _tgt.clone();
+  // シークで大きく飛んだときは、向きもすぐ合わせる
+  if (!pv.look || Math.hypot(pv.look.x - pos.x, pv.look.z - pos.z) > 25) pv.look = _tgt.clone();
   pv.look.lerp(_tgt, 1 - Math.exp(-dt * 3.2));
   camera.position.set(pos.x, groundY(pos) + EYE, pos.z);
   camera.lookAt(pv.look);
@@ -1167,7 +1175,7 @@ function adaptQuality(now) {
   let next = dpr;
   if (ms > 38 && dpr > 1) next = Math.max(1, dpr - 0.25);
   else if (ms < 20 && dpr < DPR_MAX) next = Math.min(DPR_MAX, dpr + 0.25);
-  if (next !== dpr) { dpr = next; renderer.setPixelRatio(dpr); composer.setPixelRatio(dpr); resize(); }
+  if (next !== dpr) { dpr = next; renderer.setPixelRatio(dpr); composer?.setPixelRatio(dpr); resize(); }
 }
 
 // ---------------------------------------------------------------- ループ
@@ -1209,7 +1217,7 @@ function frame(now) {
   const nearWant = state.mode === 'pov' ? 0.2 : THREE.MathUtils.clamp(camera.position.distanceTo(controls.target) * 0.015, 0.5, 20);
   if (Math.abs(camera.near - nearWant) > camera.near * 0.15) { camera.near = nearWant; camera.updateProjectionMatrix(); }
   // 昼は直接描く（速い）。夜だけ光のにじみ（ブルーム）のために後処理を通す
-  if (state.night) composer.render(); else renderer.render(scene, camera);
+  if (state.night) getComposer().render(); else renderer.render(scene, camera);
   adaptQuality(now);
   // ラベルは視点が動いたときだけ並べ直す
   camera.updateMatrixWorld();
@@ -1226,4 +1234,4 @@ if (hash.includes('>')) {
   const [f, t] = hash.split('>');
   if (poiBy[f] && poiBy[t]) { state.from = f; combos.from.show(); setPick('to', t); }
 }
-window.__app = { freeRect, THREE, state, data, camera, controls, scene, renderer, composer, bloom, go, setPick, startPov, stopPov, fitRoute, model, graph, selectRoute, setNight, flyTo, sun };
+window.__app = { freeRect, THREE, state, data, camera, controls, scene, renderer, bloom, go, setPick, startPov, stopPov, fitRoute, model, graph, selectRoute, setNight, flyTo, sun };
