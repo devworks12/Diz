@@ -889,13 +889,31 @@ function fitRoute() {
   for (const p of r.pts) box.expandByPoint(p);
   const c = box.getCenter(new THREE.Vector3());
   const len = box.getSize(new THREE.Vector3()).length();
-  const size = Math.max(170, len);
-  const fr = freeRect();
-  const k = Math.max(innerHeight / Math.max(120, fr.h), (innerWidth / Math.max(160, fr.w)) * 0.75);
   // 短い経路は真上に近い角度から（手前の建物で隠れないように）
-  const dir = len < 250 ? new THREE.Vector3(0.25, 1.7, 0.6) : new THREE.Vector3(0.35, 1.0, 0.85);
-  const off = dir.normalize().multiplyScalar(size * 0.9 * Math.min(3.2, Math.max(1, k)));
-  flyTo(c, c.clone().add(off), 900);
+  const dir = (len < 250 ? new THREE.Vector3(0.25, 1.7, 0.6) : new THREE.Vector3(0.35, 1.0, 0.85)).normalize();
+  // パネルに隠れていない範囲に経路が収まる距離を探す（視点のずらしで中心はその範囲の中心に来る）
+  const fr = freeRect();
+  const cam = new THREE.PerspectiveCamera(camera.fov, innerWidth / innerHeight, 1, 10000);
+  const pts = [];
+  const step = Math.max(1, Math.floor(r.pts.length / 60));
+  for (let i = 0; i < r.pts.length; i += step) pts.push(r.pts[i]);
+  pts.push(r.pts[r.pts.length - 1]);
+  const mx = Math.max(30, fr.w / 2 - 34), my = Math.max(30, fr.h / 2 - 40);
+  const fits = (D) => {
+    cam.position.copy(c).addScaledVector(dir, D);
+    cam.lookAt(c);
+    cam.updateMatrixWorld();
+    for (const p of pts) {
+      _v.copy(p).project(cam);
+      if (_v.z > 1) return false;
+      if (Math.abs(_v.x) * innerWidth / 2 > mx || Math.abs(_v.y) * innerHeight / 2 > my) return false;
+    }
+    return true;
+  };
+  let lo = 40, hi = 3000;
+  for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (fits(m)) hi = m; else lo = m; }
+  const D = Math.max(120, hi);
+  flyTo(c, c.clone().addScaledVector(dir, D), 900);
 }
 function freeRect() {
   const W = innerWidth, H = innerHeight, mobile = W < 760;
@@ -906,6 +924,8 @@ function freeRect() {
     y0 = Math.max(ctr.getBoundingClientRect().bottom, vis(side) ? side.getBoundingClientRect().bottom : 0) + 4;
     if (vis(board)) y1 = board.getBoundingClientRect().top;
     else if (vis(mini)) y1 = mini.getBoundingClientRect().top;
+    const vb = $('#viewBtns');
+    if (vis(vb)) y1 = Math.min(y1, vb.getBoundingClientRect().top - 4);
   } else {
     if (vis(side)) x0 = side.getBoundingClientRect().right + 8;
     if (vis(board)) x1 = board.getBoundingClientRect().left - 8;
@@ -1003,7 +1023,7 @@ $('#pauseBtn').onclick = (e) => { e.stopPropagation(); togglePause(); };
 const _tgt = new THREE.Vector3();
 function stepPov(now) {
   const pv = state.pov, r = state.routes[state.sel];
-  const dt = Math.min(0.1, (now - pv.last) / 1000);
+  const dt = Math.max(0, Math.min(0.1, (now - pv.last) / 1000));
   pv.last = now;
   if (!pv.paused && !pv.done) {
     pv.t += dt * SPEED[state.speed];
@@ -1103,7 +1123,8 @@ function updateShadow() {
 let last = performance.now();
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000) || 1 / 60;
+  // requestAnimationFrame の時刻は performance.now() より前のことがある（負の dt で視点のずれが発散しないように）
+  const dt = Math.max(0.001, Math.min(0.05, (now - last) / 1000)) || 1 / 60;
   last = now;
   if (state.mode === 'pov' && state.pov) stepPov(now);
   else {
@@ -1138,4 +1159,4 @@ if (hash.includes('>')) {
   const [f, t] = hash.split('>');
   if (poiBy[f] && poiBy[t]) { state.from = f; combos.from.show(); setPick('to', t); }
 }
-window.__app = { THREE, state, data, camera, controls, scene, renderer, composer, bloom, go, setPick, startPov, stopPov, fitRoute, model, graph, selectRoute, setNight, flyTo, sun };
+window.__app = { freeRect, THREE, state, data, camera, controls, scene, renderer, composer, bloom, go, setPick, startPov, stopPov, fitRoute, model, graph, selectRoute, setNight, flyTo, sun };
