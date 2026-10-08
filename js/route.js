@@ -195,8 +195,10 @@ export class Graph {
     // 表示・POV 用の点列（角を少し丸める）。始点・終点は施設の位置まで伸ばす
     let raw = path.map((i) => [N[i * 3], N[i * 3 + 1], N[i * 3 + 2], i]);
     const startXZ = A.poi || A.x != null ? [A.x, 0, A.z, -1] : null, endXZ = B.poi || B.x != null ? [B.x, 0, B.z, -1] : null;
-    if (startXZ && Math.hypot(startXZ[0] - raw[0][0], startXZ[2] - raw[0][2]) > 1.5) raw.unshift(startXZ);
-    if (endXZ && Math.hypot(endXZ[0] - raw[raw.length - 1][0], endXZ[2] - raw[raw.length - 1][2]) > 1.5) raw.push(endXZ);
+    // 施設の位置まで線を伸ばすのは近いときだけ（水面や建物の向こうへ線が飛ばないように）
+    const ext = (p, q) => { const d = Math.hypot(p[0] - q[0], p[2] - q[2]); return d > 1.5 && d < 14; };
+    if (startXZ && ext(startXZ, raw[0])) raw.unshift(startXZ);
+    if (endXZ && ext(endXZ, raw[raw.length - 1])) raw.push(endXZ);
     // ほぼ同じ場所の点を間引く
     const pts0 = [raw[0]];
     for (const p of raw.slice(1)) { const q = pts0[pts0.length - 1]; if (Math.hypot(p[0] - q[0], p[2] - q[2]) > 0.4) pts0.push(p); }
@@ -365,8 +367,7 @@ export class Graph {
     steps.push({ icon: '◎', text: endText, sub: res.B.poi?.sub || '', s: res.dist, cls: 'end', dist: res.dist - prevS });
     res.steps = steps;
     // 6) タグライン（通るエリア・階段）
-    const seen = [];
-    for (let k = 0; k < path.length; k++) { const nm = portName(np[path[k]]); if (seen[seen.length - 1] !== nm) seen.push(nm); }
+    const seen = [firstPort, ...events.filter((e) => e.type === 'port').map((e) => e.text.replace(/に入る$/, ''))];
     const uniq = [...new Set(seen)];
     const parts = [];
     parts.push(uniq.length > 3 ? `${uniq.slice(0, 2).join('・')} ほか${uniq.length - 2}エリア経由` : uniq.join(' → '));

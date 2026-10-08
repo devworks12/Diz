@@ -67,13 +67,14 @@ export function buildLandmarks(model) {
           const dO = distToRing(x, z, outer);
           const dH = holes.length ? Math.min(...holes.map((h) => distToRing(x, z, h))) : 1e9;
           const rp = Math.hypot(x - px, z - pz);
-          const base = 24 * sm(dO / 36) * sm(dH / 16);
-          const peak = L.h * Math.exp(-(rp * rp) / (2 * 25 * 25)) * sm(dO / 12) * sm(dH / 8);
+          // 外側はなだらか、カルデラ（内側の穴）側は切り立った崖
+          const base = 26 * sm(dO / 34) * sm(dH / 6);
+          const peak = L.h * Math.exp(-(rp * rp) / (2 * 25 * 25)) * sm(dO / 12) * sm(dH / 5);
           let h = Math.max(base, peak);
           if (rp < 11) h -= (1 - rp / 11) * 10;           // 火口
-          h += (fbm(x * 0.05, z * 0.05) - 0.5) * 12 * sm(dO / 10) + (fbm(x * 0.22 + 9, z * 0.22) - 0.5) * 3;
+          h += (fbm(x * 0.05, z * 0.05) - 0.5) * 12 * sm(dO / 10) * sm(dH / 4) + (fbm(x * 0.22 + 9, z * 0.22) - 0.5) * 3;
           const dp = model.pathIdx.dist(x, z);
-          if (dp < 6) h = Math.min(h, Math.max(0, (dp - 2.4) * 2.0)); // 通路は谷（トンネルのよう）に
+          if (dp < 4) h = Math.min(h, Math.max(0, (dp - 1.9) * 5.0)); // 通路は切り通し（谷）に
           return h;
         };
         const cLow = col('#6e5a40'), cGreen = col('#4f6a34'), cMid = col('#87472f'), cHigh = col('#5b3226'), cTop = col('#2d2320');
@@ -83,7 +84,7 @@ export function buildLandmarks(model) {
           if (ny > 0.75 && h < 16 && n > 0.48) c.lerp(cGreen, 0.7);
           return c.multiplyScalar(0.82 + n * 0.35);
         };
-        const g = heightfield(outer, holes, model.mobile ? 2.6 : 1.9, hfn, colfn, -0.2);
+        const g = heightfield(outer, holes, model.mobile ? 2.2 : 1.5, hfn, colfn, -0.2);
         A.stone.p.push(...g.p); A.stone.n.push(...g.n); A.stone.u.push(...g.u); A.stone.c.push(...g.c);
         // 火口の赤い光（夜に強く）
         A.glow.add(new THREE.CircleGeometry(6, 20).rotateX(-Math.PI / 2), M(px, hfn(px, pz) + 0.3, pz), col('#ff6a20'));
@@ -354,7 +355,7 @@ export function buildLandmarks(model) {
 
   // ---------------------------------------------------------------- メッシュにまとめる
   const add = (acc, mat, cast = true) => { if (!acc.count) return null; return model.mesh(acc.geo(), mat, { cast }); };
-  add(A.stone, model.mat({ map: model.tex.rock, vertexColors: true, roughness: 0.95, flatShading: true }));
+  add(A.stone, model.mat({ map: model.tex.rock, vertexColors: true, roughness: 0.95, flatShading: true, side: THREE.DoubleSide }));
   add(A.plaster, model.mat({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }));
   add(A.metal, model.mat({ vertexColors: true, roughness: 0.35, metalness: 0.65, side: THREE.DoubleSide }));
   add(A.wood, model.mat({ map: model.tex.soil, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));

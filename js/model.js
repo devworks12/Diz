@@ -219,7 +219,7 @@ const PAL = {
   lrd: { walls: ['#d4bb92', '#c4a67a', '#ddc8a4', '#bfa27c'], roof: ['#8a5a3a', '#7a6a50', '#9a6a40'], trim: '#a88a60', pitch: 0.35, roofKind: 'hip', plaza: '#c4ad86', paving: 'dirt' },
   arab: { walls: ['#f6ead0', '#eedcb6', '#fbf4e4', '#e8cfa0', '#f0e0c4'], roof: ['#e8d8b8', '#d8c098'], trim: '#d4a85c', pitch: 0.2, roofKind: 'flat', plaza: '#dcc7a0', paving: 'stone' },
   mermaid: { walls: ['#f4c9c6', '#cfe6e1', '#f2ddb6', '#ddcdf0', '#f6d2b8'], roof: ['#e89a8a', '#8ac8c0', '#e8c070'], trim: '#f6e0b8', pitch: 0.5, roofKind: 'flat', plaza: '#e0c8b8', paving: 'cobble' },
-  mi: { walls: ['#9a7a64', '#8a7a6c', '#a88a74'], roof: ['#5a4232', '#4a4a48'], trim: '#6a4e38', pitch: 0.4, roofKind: 'flat', plaza: '#9a8a7a', paving: 'stone' },
+  mi: { walls: ['#9a7a64', '#8a7a6c', '#a88a74'], roof: ['#5a4232', '#4a4a48'], trim: '#6a4e38', pitch: 0.4, roofKind: 'flat', plaza: '#b09276', paving: 'stone' },
   fs: { walls: ['#efe7d8', '#e0d2b4', '#d4dae0', '#ecd8c6', '#f4ecd8'], roof: ['#3f5f58', '#4a5a6a', '#5a4a40', '#3a5070'], trim: '#6e4e32', pitch: 1.0, roofKind: 'gable', plaza: '#b4b0a8', paving: 'cobble' },
 };
 const ROCK = { MH: '#a89a88', EN: '#a89a88', AW: '#8f8a84', CC: '#8f8a84', PD: '#8a8682', LR: '#b49468', AC: '#c4a47a', ML: '#c8907c', MI: '#8a5440', FS: '#8e9094' };
@@ -237,6 +237,7 @@ export class ParkModel {
     this.portBy = Object.fromEntries(d.ports.map((p) => [p.key, p]));
     this.portIx = d.ports.map((p) => p.key);
     this.nightMats = [];   // 夜に光るもの [material, 昼の強さ, 夜の強さ]
+    this.noReflect = [];   // 水面の映り込みには描かない細かいもの（軽くするため）
     this.pathIdx = new SegIndex(8);
     const N = d.nodes, E = d.edges;
     for (let i = 0; i < E.length; i += 3) {
@@ -256,10 +257,18 @@ export class ParkModel {
     this.buildWater();
     this.buildRocks();
     this.buildBuildings();
+    this.buildContext();
     this.buildRibbons();
     this.buildLines();
     this.buildTrees();
     this.buildLamps();
+    // 映り込みの描画では、木・街灯・柵などの細かいものを省く
+    const w = this.water, orig = w.onBeforeRender;
+    w.onBeforeRender = (...args) => {
+      for (const o of this.noReflect) o.visible = false;
+      orig.apply(w, args);
+      for (const o of this.noReflect) o.visible = true;
+    };
     const lm = buildLandmarks(this);
     this.landmarks = lm;
     for (const L of d.portLabels) {
@@ -724,6 +733,23 @@ export class ParkModel {
     return t;
   }
 
+  // ---------------------------------------------------------------- 園の外の建物（控えめな色の箱）
+  buildContext() {
+    const acc = new Acc(), top = new Acc();
+    const c = col('#b4ada2'), ct = col('#9c968c');
+    for (const b of this.d.context || []) {
+      let r = ring(b.r);
+      if (ringArea(r) < 0) r = r.reverse();
+      this.extrude(acc, r, 0, b.h, () => c, null);
+      top.add(flatGeo(r, [], b.h, 1 / 4), new THREE.Matrix4(), ct);
+    }
+    if (!acc.count) return;
+    const m = this.mat({ vertexColors: true, roughness: 0.95 });
+    const g1 = this.mesh(acc.geo(), m, { cast: false });
+    const g2 = this.mesh(top.geo(), m, { cast: false });
+    this.noReflect.push(g1, g2);
+  }
+
   // ---------------------------------------------------------------- 通路（線）・橋
   buildRibbons() {
     const acc = new Acc(), deck = new Acc(), rail = new Acc();
@@ -760,7 +786,7 @@ export class ParkModel {
       }
     }
     const m = this.mat({ map: this.tex.stone, vertexColors: true, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8 });
-    this.mesh(acc.geo(), m, { cast: false, order: 8 });
+    this.noReflect.push(this.mesh(acc.geo(), m, { cast: false, order: 8 }));
     this.mesh(deck.geo(), this.mat({ map: this.tex.stone, vertexColors: true, roughness: 0.9 }));
     const rm = this.mat({ map: this.railTex(), vertexColors: true, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.3 });
     this.mesh(rail.geo(), rm);
@@ -823,7 +849,7 @@ export class ParkModel {
     }
     if (wall.count) this.mesh(wall.geo(), this.mat({ map: this.tex.stone, vertexColors: true }));
     if (hedge.count) this.mesh(hedge.geo(), this.mat({ map: this.tex.soil, vertexColors: true, roughness: 1 }));
-    if (fence.count) this.mesh(fence.geo(), this.mat({ vertexColors: true, roughness: 0.5, metalness: 0.4 }), { cast: false });
+    if (fence.count) this.noReflect.push(this.mesh(fence.geo(), this.mat({ vertexColors: true, roughness: 0.5, metalness: 0.4 }), { cast: false }));
     if (track.count) this.mesh(track.geo(), this.mat({ map: this.tex.stone, vertexColors: true, roughness: 0.85 }));
   }
 
@@ -866,8 +892,9 @@ export class ParkModel {
         c.set(leafCol).offsetHSL((((i * 31) % 17) / 17 - 0.5) * 0.04, 0, (((i * 13) % 11) / 11 - 0.5) * jitter * 2);
         lm.setColorAt(i, c);
       });
-      for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); }
+      for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
     };
+    const DET = this.mobile ? 0 : 1;
     const blob = (rad, det, y, sx = 1, sy = 1) => {
       const g = new THREE.IcosahedronGeometry(rad, det);
       const P = g.attributes.position;
@@ -889,18 +916,18 @@ export class ParkModel {
       return g;
     };
     // 広葉樹（丸い葉のかたまり 3 つ）
-    const broadLeaf = vc(mergeGeometries([blob(2.6, 1, 5.6), blob(2.0, 1, 4.6).translate(1.6, 0, 0.6), blob(1.9, 1, 4.9).translate(-1.3, 0.3, -1.0)]));
+    const broadLeaf = vc(mergeGeometries([blob(2.6, DET, 5.6), blob(2.0, DET, 4.6).translate(1.6, 0, 0.6), blob(1.9, DET, 4.9).translate(-1.3, 0.3, -1.0)]));
     make(kinds.broad, new THREE.CylinderGeometry(0.18, 0.28, 4.4, 6).translate(0, 2.2, 0), broadLeaf, '#679a44');
     make(kinds.jungle, new THREE.CylinderGeometry(0.2, 0.32, 5, 6).translate(0, 2.5, 0),
-      vc(mergeGeometries([blob(3.2, 1, 6.2, 1.2, 0.7), blob(2.4, 1, 4.6, 1.2, 0.7).translate(1.8, 0, 1.0)])), '#4f8f3c');
+      vc(mergeGeometries([blob(3.2, DET, 6.2, 1.2, 0.7), blob(2.4, DET, 4.6, 1.2, 0.7).translate(1.8, 0, 1.0)])), '#4f8f3c');
     // 針葉樹
     const con = vc(mergeGeometries([new THREE.ConeGeometry(2.4, 4.2, 8).translate(0, 4.2, 0), new THREE.ConeGeometry(1.9, 3.6, 8).translate(0, 6.2, 0), new THREE.ConeGeometry(1.2, 3.0, 8).translate(0, 8.0, 0)]));
     make(kinds.conifer, new THREE.CylinderGeometry(0.15, 0.25, 3, 6).translate(0, 1.5, 0), con, '#3f6f42');
     // イトスギ（地中海の細長い木）
-    const cyp = vc(blob(1.0, 1, 0, 1, 4.2).translate(0, 5.0, 0));
+    const cyp = vc(blob(1.0, DET, 0, 1, 4.2).translate(0, 5.0, 0));
     make(kinds.cypress, new THREE.CylinderGeometry(0.12, 0.18, 1.6, 5).translate(0, 0.8, 0), cyp, '#456e3a');
     // カサマツ（傘のような松）
-    make(kinds.pine, new THREE.CylinderGeometry(0.2, 0.3, 6.5, 6).translate(0, 3.25, 0), vc(blob(3.6, 1, 7.2, 1, 0.38)), '#55803f');
+    make(kinds.pine, new THREE.CylinderGeometry(0.2, 0.3, 6.5, 6).translate(0, 3.25, 0), vc(blob(3.6, DET, 7.2, 1, 0.38)), '#55803f');
     // ヤシ
     const frond = [];
     for (let k = 0; k < 9; k++) {
@@ -925,7 +952,7 @@ export class ParkModel {
         tm.setMatrixAt(i, m); lm.setMatrixAt(i, m);
         lm.setColorAt(i, c.set('#5d8a3a').offsetHSL(0, 0, (((i * 13) % 11) / 11 - 0.5) * 0.12));
       });
-      for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); }
+      for (const im of [tm, lm]) { im.castShadow = true; im.receiveShadow = true; this.root.add(im); this.noReflect.push(im); }
     }
   }
 
@@ -958,6 +985,7 @@ export class ParkModel {
     pts.forEach(([x, z], i) => { m.makeTranslation(x, 0, z); pm.setMatrixAt(i, m); hm.setMatrixAt(i, m); });
     pm.castShadow = true;
     this.root.add(pm, hm);
+    this.noReflect.push(pm, hm);
     this.nightMats.push([hm.material, 'lamp', 1]);
     this.lampPts = pts;
   }

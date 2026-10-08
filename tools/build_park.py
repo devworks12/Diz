@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import park_config as C  # noqa: E402
-from osm import load_osm, Proj, area, centroid, pip, seg_dist, seg_inter, simplify, dist_to_ring, principal_angle  # noqa: E402
+from osm import load_osm, Proj, area, centroid, pip, seg_dist, seg_inter, simplify, dist_to_ring, principal_angle  # noqa: E402,F401
 from features import Features  # noqa: E402
 
 REPORT = "--report" in sys.argv
@@ -270,6 +270,26 @@ for a in AREAS["building"]:
     BUILDINGS.append(rec)
     if not roofonly and not mh:
         bld_seg.add_ring(ring, a["id"])
+
+# 園の外の建物（周りの街並み。おおまかな箱だけ）
+CONTEXT = []
+for a in F.areas:
+    t = a["tags"]
+    if "building" not in t or in_park(a["outer"], 20):
+        continue
+    r = simplify(a["outer"], 1.0)
+    A = abs(area(r))
+    if A < 60 or len(r) < 3:
+        continue
+    cx, cz = centroid(r)
+    if abs(cx) > 1500 or abs(cz) > 1300:
+        continue
+    h = parse_h(t.get("height"))
+    if h is None and t.get("building:levels"):
+        h = float(parse_h(t.get("building:levels")) or 2) * 3.4
+    if h is None:
+        h = 6 if A < 300 else 10 if A < 3000 else 16
+    CONTEXT.append({"r": flat(r, 1), "h": round(min(h, 80), 1)})
 
 # ------------------------------------------------------------------ 水面・岩
 water_seg = SegGrid(20)
@@ -566,9 +586,44 @@ def category(p):
 
 
 def connect(p):
-    """施設を通路につなぐ。建物の中なら、その建物の出入口のそばの通路へ"""
+    """施設を通路につなぐ。建物の中なら、その建物の出入口のそばの通路へ。
+    戻り値: (グラフの点, 距離, 表示位置 x, z)"""
     x, z = p["x"], p["z"]
     ring = p["ring"]
+    if ring is not None:
+        # 建物そのものが施設のとき: 出入口（main を優先）か、建物の縁にいちばん近い通路
+        ents = ENTR_BY_B.get(p["osm"], [])
+        if ents:
+            mains = [e for e in ents if e[2]] or ents
+            best = None
+            for (ex, ez, _m) in mains:
+                for (d, i, px, pz) in final_grid.near(ex, ez, 40):
+                    if NY[i] > 0.3 or water_seg.crosses((ex, ez), (px, pz)) or bld_seg.crosses((ex, ez), (px, pz), skip={p["osm"]}):
+                        continue
+                    if best is None or d < best[1]:
+                        best = (i, d, ex, ez)
+                    break
+            if best:
+                return best
+        R0 = max(math.hypot(q[0] - x, q[1] - z) for q in ring) + 30
+        cands = []
+        for (d, i, px, pz) in final_grid.near(x, z, R0):
+            if NY[i] > 0.3:
+                continue
+            dr = dist_to_ring(px, pz, ring)
+            if dr < 30 and not pip(px, pz, ring):
+                cands.append((dr, i, px, pz))
+        cands.sort()
+        for (dr, i, px, pz) in cands[:40]:
+            # 建物の縁の、その点にいちばん近いところ
+            best_q, bd = None, 1e9
+            for k in range(len(ring)):
+                dd, t, qx, qz = seg_dist(px, pz, *ring[k], *ring[(k + 1) % len(ring)])
+                if dd < bd:
+                    bd, best_q = dd, (qx, qz)
+            if bld_seg.crosses(best_q, (px, pz), skip={p["osm"]}) or water_seg.crosses(best_q, (px, pz)):
+                continue
+            return i, dr, best_q[0], best_q[1]
     host = None
     if ring is None:
         for b in BLD_RINGS:
@@ -582,7 +637,7 @@ def connect(p):
         # 小さな建物は出入口（entrance=* の点）から（大きな建物は建物の中を広場が通っていることがある）
         ents = ENTR_BY_B.get(host[2], [])
         if ents:
-            ex, ez = min(ents, key=lambda e: math.hypot(e[0] - x, e[1] - z))
+            ex, ez, _m = min(ents, key=lambda e: math.hypot(e[0] - x, e[1] - z))
             x, z = ex, ez
     for (d, i, px, pz) in final_grid.near(x, z, 90):
         if NY[i] > 0.3:
@@ -591,9 +646,9 @@ def connect(p):
             continue
         if water_seg.crosses((x, z), (px, pz)):
             continue
-        return i, d
+        return i, d, p["x"], p["z"]
     best = final_grid.near(x, z, 200)
-    return (best[0][1], best[0][0]) if best else (None, None)
+    return (best[0][1], best[0][0], p["x"], p["z"]) if best else (None, None, None, None)
 
 
 BLD_RINGS = []
@@ -608,7 +663,7 @@ for wid, (refs, t) in ways.items():
         continue
     for r in refs:
         if r in nodes and nodes[r][2].get("entrance"):
-            ENTR_BY_B["w%d" % wid].append(P(*nodes[r][:2]))
+            ENTR_BY_B["w%d" % wid].append((*P(*nodes[r][:2]), nodes[r][2].get("entrance") == "main"))
 
 POIS = []
 seen_names = set()
@@ -642,11 +697,11 @@ for p in items:
     if cat not in ("toilet",) and disp not in ("ポップコーンワゴン", "アイスクリームワゴン", "ドリンクワゴン", "コインロッカー", "飲料販売機", "ポップコーン") and key in seen_names:
         continue
     seen_names.add(key)
-    n, d = connect(p)
+    n, d, px, pz = connect(p)
     if n is None:
         print("  ! 通路につなげない施設:", nm, file=sys.stderr)
         continue
-    rec = {"c": cat, "n": disp, "p": port, "x": R(p["x"]), "z": R(p["z"]), "g": n, "osm": p["osm"]}
+    rec = {"c": cat, "n": disp, "p": port, "x": R(px), "z": R(pz), "g": n, "osm": p["osm"]}
     if p["name"] in C.HOTEL:
         rec["sub"] = C.HOTEL[p["name"]]
     en = p["tags"].get("name:en")
@@ -677,7 +732,7 @@ for e in C.ENTRANCES:
             print("  ! 入口が見つかりません:", e, file=sys.stderr)
             continue
         q = dict(q, ring=None)
-    n, d = connect(q)
+    n, d, _x, _z = connect(q)
     POIS.append({"c": "entrance", "n": e["name"], "sub": e["sub"], "p": port_at(q["x"], q["z"]), "x": R(q["x"]), "z": R(q["z"]), "g": n, "key": e["key"]})
 
 # 名前の無い施設（トイレ・ワゴン）には近くの目印を添える
@@ -840,8 +895,8 @@ for port in C.PORTS:
     pts = [(a[0], a[1]) for a in ANCH if a[2] == port["key"]]
     if not pts:
         continue
-    PLAB.append({"k": port["key"], "n": port["name"], "en": port["en"], "c": port["color"], "s": port["style"],
-                 "x": R(sum(p[0] for p in pts) / len(pts)), "z": R(sum(p[1] for p in pts) / len(pts))})
+    lx, lz = port.get("label") or (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+    PLAB.append({"k": port["key"], "n": port["name"], "en": port["en"], "c": port["color"], "s": port["style"], "x": R(lx), "z": R(lz)})
 
 # ------------------------------------------------------------------ 書き出し
 nodes_out = []
@@ -855,12 +910,10 @@ for (a, b, kind, cost, ni) in E:
     cost_out.append(round(cost, 2))
     ename.append(ni)
 PORT_IX = {p["key"]: i for i, p in enumerate(C.PORTS)}
-from datetime import datetime, timezone  # noqa: E402
 ts_file = ROOT / "data/raw/timestamp.txt"
 ts = ts_file.read_text().strip() if ts_file.exists() else ""
 out = {
-    "meta": {"title": "東京ディズニーシー", "origin": list(C.ORIGIN), "osm_timestamp": ts,
-             "built": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")},
+    "meta": {"title": "東京ディズニーシー", "origin": list(C.ORIGIN), "osm_timestamp": ts},
     "park": flat(simplify(PARK, 0.5)),
     "sea": SEA,
     "ports": [{"key": p["key"], "name": p["name"], "en": p["en"], "color": p["color"], "style": p["style"], "parent": p.get("parent")} for p in C.PORTS],
@@ -877,6 +930,7 @@ out = {
     "ground": GROUND,
     "ribbons": RIBBONS,
     "buildings": BUILDINGS,
+    "context": CONTEXT,
     "landmarks": LMS,
     "trees": TREES,
     "lines": LINES,
@@ -889,7 +943,7 @@ if REPORT:
     from collections import Counter
     print(f"park.json {len(js) / 1e6:.2f} MB")
     print(f"歩行グラフ: 点 {len(NX)}  辺 {len(E)}（広場の見通し {plaza_cnt}・途切れ補修 {gap_cnt}）  つながり {len(comps)} 個（最大 {len(comps[0])}, 次 {[len(c) for c in comps[1:6]]}）")
-    print(f"建物 {len(BUILDINGS)}  木 {len(TREES)}  通路 {len(RIBBONS)}  ランドマーク {len(LMS)}")
+    print(f"建物 {len(BUILDINGS)}（園の外 {len(CONTEXT)}）  木 {len(TREES)}  通路 {len(RIBBONS)}  ランドマーク {len(LMS)}")
     print("面:", {k: len(v) for k, v in GROUND.items()})
     print("施設:", dict(Counter(p["c"] for p in POIS)))
     found = {p["n"] for p in POIS if p["c"] == "attr"}
