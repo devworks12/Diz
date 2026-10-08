@@ -41,14 +41,17 @@ button{font:inherit;color:inherit}
 .row{display:flex;gap:8px;align-items:flex-end}
 .field{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
 .field label{font-size:11px;color:var(--dim)}
-#goBtn{height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--gold);background:rgba(242,177,58,.14);color:var(--gold);font-weight:900;font-size:14px;cursor:pointer;white-space:nowrap;letter-spacing:.04em}
+#goBtn{height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--gold);background:rgba(242,177,58,.14);color:var(--gold);font-weight:900;font-size:14px;cursor:pointer;white-space:nowrap;letter-spacing:.04em;display:inline-flex;align-items:center;gap:6px}
+#goBtn .si{width:15px;height:15px}
 #goBtn:hover{background:var(--gold);color:var(--gold-ink)}
 #goBtn:disabled{opacity:.4;cursor:not-allowed;background:none}
 .subrow{justify-content:space-between;align-items:center;flex-wrap:wrap}
 .chips{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
-.chips button{border:1px solid var(--line2);background:var(--solid);border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer;color:#cdd6e4}
+.chips button{border:1px solid var(--line2);background:var(--solid);border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer;color:#cdd6e4;display:inline-flex;align-items:center;gap:6px}
+.chips button .ic{width:20px;height:20px;border-radius:6px}
+.chips button.q{padding:3px 11px 3px 4px}
 .chips button:hover{border-color:#4a6a98;color:var(--ink)}
-.chips button.q{border-color:#2f6a72;color:#9be3e8}
+.chips button.q{color:var(--ink);font-weight:700}
 .seg{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;flex:none}
 .seg button{border:0;background:var(--solid);padding:5px 11px;font-size:12px;cursor:pointer;color:var(--dim)}
 .seg button[aria-pressed=true]{background:#33290f;color:var(--gold);font-weight:700}
@@ -100,25 +103,62 @@ button{font:inherit;color:inherit}
 .mgrip{display:none}
 
 /* ---- 左: エリア・施設の表示 ---- */
-#side{position:fixed;z-index:9;left:14px;top:300px;padding:6px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 340px);overflow:auto;scrollbar-width:none}
+#side{position:fixed;z-index:9;left:14px;top:300px;padding:8px 6px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 340px);overflow:auto;scrollbar-width:none;width:206px}
 #side::-webkit-scrollbar{display:none}
-#side .sep{height:1px;background:var(--line);margin:4px 2px}
-#side button{border:0;background:none;padding:4px 9px;border-radius:7px;font-size:11.5px;cursor:pointer;color:var(--dim);text-align:left;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:6px}
-#side button:hover{color:var(--ink);background:rgba(255,255,255,.05)}
-#side .dot{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
-#side button[aria-pressed=false]{opacity:.35}
-#cats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
-#side .cat{justify-content:center;font-size:15px;padding:5px 0}
-#side .tbtns{display:flex;gap:2px}
-#side .tbtns button{flex:1;justify-content:center}
-#side .tbtn[aria-pressed=true]{color:var(--gold);background:#33290f;opacity:1}
-#side.row{flex-direction:row;overflow-x:auto;max-height:none}
-#side.row .sep{width:1px;height:auto;margin:2px 4px}
-#side.row #areas,#side.row #cats{display:flex;flex-direction:row;gap:2px}
+#side h4{margin:2px 8px 4px;font-size:10px;letter-spacing:.18em;color:var(--mute);font-weight:700}
+#side .sep{height:1px;background:var(--line);margin:6px 2px}
+#side button{border:0;background:none;padding:4px 8px;border-radius:8px;font-size:12px;cursor:pointer;color:var(--dim);text-align:left;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:8px}
+#side button:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+#side .dot{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none;box-shadow:0 0 0 2px rgba(255,255,255,.12)}
+#cats{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+#side .cat{color:var(--ink);padding:5px 6px;border:1px solid transparent}
+#side .cat .ic{width:24px;height:24px;border-radius:7px}
+#side:not(.row) .cat .lg{display:none}
+#side:not(.row) .cat .sh{display:inline}
+#side .cat[aria-pressed=true]{border-color:var(--gold);background:rgba(242,177,58,.12)}
+#side .tbtns{display:flex;gap:3px}
+#side .tbtns button{flex:1;justify-content:center;border:1px solid var(--line2);padding:5px 6px}
+#side .tbtn[aria-pressed=true]{color:var(--gold);background:#33290f;border-color:#6a5420}
+.si{display:inline-flex;width:16px;height:16px;flex:none}
+.si svg{width:100%;height:100%}
+#side.row{flex-direction:row;align-items:center;overflow-x:auto;max-height:none;width:auto;padding:5px;gap:3px}
+#side.row h4{display:none}
+#side.row .sep{width:1px;height:28px;margin:0 3px;flex:none}
+#side.row #areas,#side.row #cats{display:flex;flex-direction:row;gap:3px}
 #side.row .lg{display:none}
 #side .sh{display:none}
 #side.row .sh{display:inline}
-body.pov #side,body.pov #top,body.pov #viewBtns,body.pov #note,body.pov #pop{display:none}
+#side.row .cat{padding:3px 8px 3px 3px;border-color:var(--line2);border-radius:999px}
+#side.row .cat .ic{width:24px;height:24px;border-radius:50%}
+#side.row #areas button{padding:4px 7px;font-size:11.5px}
+#side.row .tbtns button{padding:4px 8px;border-radius:999px}
+body.pov #side,body.pov #top,body.pov #viewBtns,body.pov #note,body.pov #pop,body.pov #catSheet{display:none}
+
+/* ---- さがす（カテゴリの一覧） ---- */
+#catSheet{position:fixed;z-index:11;right:14px;top:calc(14px + var(--safe-t));width:340px;max-height:calc(100vh - 90px - var(--safe-t));display:flex;flex-direction:column;padding:10px 12px 8px;gap:6px}
+#catSheet .chead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#catSheet .ch{display:flex;align-items:center;gap:8px;min-width:0}
+#catSheet .ch b{font-size:16px}
+#catSheet .ch .cnt{font-size:12px;color:var(--dim)}
+.iconbtn.sm{width:32px;height:32px;padding:7px}
+.iconbtn .si,.iconbtn svg{width:100%;height:100%}
+#catSheet .cbase{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--gold)}
+#catSheet .cbase span{flex:1 1 100%}
+.mini{border:1px solid var(--line2);background:var(--solid);border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer;color:var(--ink);display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.mini .si{width:13px;height:13px}
+.mini.gold{border-color:var(--gold);color:var(--gold)}
+#catSheet .clist{overflow:auto;display:flex;flex-direction:column;gap:3px;margin:0 -4px;padding:0 4px;overscroll-behavior:contain}
+.citem{display:grid;grid-template-columns:24px 1fr auto;gap:9px;align-items:center;text-align:left;border:1px solid transparent;background:rgba(18,34,58,.6);border-radius:10px;padding:7px 9px;cursor:pointer;color:var(--ink)}
+.citem:hover{border-color:var(--line2)}
+.citem .rk{width:22px;height:22px;border-radius:50%;background:#22385a;color:var(--dim);font:700 11px "JetBrains Mono",monospace;display:flex;align-items:center;justify-content:center}
+.citem.top .rk{background:var(--gold);color:var(--gold-ink)}
+.citem .t{min-width:0}
+.citem .t b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.citem .t small{display:block;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.citem .tm{font-size:12px;color:var(--gold);white-space:nowrap}
+body.catview #board,body.catview #boardMini{display:none!important}
+#toast{position:fixed;z-index:70;left:50%;top:calc(50% - 40px);transform:translate(-50%,-50%) scale(.96);padding:10px 16px;border-radius:12px;background:rgba(12,23,38,.94);border:1px solid var(--gold);color:var(--ink);font-size:13px;font-weight:700;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
+#toast.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
 
 /* ---- 施設のポップアップ ---- */
 #pop{position:fixed;z-index:20;padding:10px 12px;min-width:220px;max-width:300px;display:flex;flex-direction:column;gap:8px;transform:translate(-50%,calc(-100% - 18px))}
@@ -129,7 +169,9 @@ body.pov #side,body.pov #top,body.pov #viewBtns,body.pov #note,body.pov #pop{dis
 #pop .pb .btn{flex:1;padding:7px 8px}
 
 /* ---- カテゴリのアイコン ---- */
-.ic{width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex:none;font-size:15px;line-height:1;background:var(--c,#556);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.25)}
+.ic{width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex:none;line-height:1;color:#fff;background:linear-gradient(160deg,color-mix(in srgb,var(--c,#556) 78%,#fff),var(--c,#556) 55%,color-mix(in srgb,var(--c,#556) 80%,#000));box-shadow:inset 0 0 0 1px rgba(255,255,255,.3),0 1px 2px rgba(0,0,0,.3)}
+.ic i{display:flex;width:64%;height:64%}
+.ic svg{width:100%;height:100%}
 .ic.none{background:none;box-shadow:none;border:1.5px dashed var(--line2)}
 .cbox{position:relative;display:flex;align-items:center}
 .cbox input{width:100%;height:40px;padding:0 10px 0 44px;border-radius:10px;border:1px solid var(--line2);background:var(--solid);color:var(--ink);
@@ -202,11 +244,13 @@ body.pov #hint,body.routed #hint{display:none}
 .lbl.lm.small{font-size:10px;font-weight:500}
 .lbl.bldg{color:#fff;font-weight:500;font-size:10.5px;text-shadow:0 1px 3px #000,0 0 6px #000}
 .pin{position:fixed;left:0;top:0;z-index:6;display:flex;align-items:center;gap:4px;cursor:pointer;transform:translate(-50%,-100%);pointer-events:auto;white-space:nowrap}
-.pin .ic{width:22px;height:22px;font-size:12px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.5),inset 0 0 0 2px #fff}
-.pin .ic span{transform:rotate(45deg)}
+.pin .ic{width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45),inset 0 0 0 2px #fff}
+.pin .ic i{transform:rotate(45deg);width:58%;height:58%}
+.pin .rk{display:none}
+.pin.top .rk{display:flex;position:absolute;left:15px;top:-7px;width:15px;height:15px;border-radius:50%;background:var(--gold);color:var(--gold-ink);font:700 9.5px/1 "JetBrains Mono",monospace;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .pin .nm{font-size:10.5px;font-weight:700;color:#fff;text-shadow:0 1px 2px #000,0 0 5px #000;display:none}
 .pin.named .nm{display:inline}
-.pin.sel .ic{width:32px;height:32px;font-size:16px;box-shadow:0 0 0 3px var(--gold),0 3px 10px rgba(0,0,0,.6)}
+.pin.sel .ic{width:32px;height:32px;box-shadow:0 0 0 3px var(--gold),0 3px 10px rgba(0,0,0,.6)}
 .pin.sel .nm{display:inline;font-size:12px;padding:1px 6px;border-radius:5px;background:var(--gold);color:var(--gold-ink);text-shadow:none}
 .pin.from.sel .nm{background:#fff}
 body.pov .pin,body.pov .lbl{display:none}
@@ -228,7 +272,10 @@ body.pov .pin,body.pov .lbl{display:none}
   #goBtn{height:36px;padding:0 10px;font-size:13px}
   #speedSeg{display:none}
   .subrow{flex-wrap:nowrap}
-  #quick{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  #quick{display:none}
+  .subrow{display:none}
+  #catSheet{left:0;right:0;top:auto;bottom:0;width:auto;max-height:46vh;border-radius:16px 16px 0 0;padding:6px 12px calc(10px + var(--safe-b))}
+  #catSheet .grip{display:block}
   #quick::-webkit-scrollbar{display:none}
   #quick button{white-space:nowrap}
   .seg button{padding:5px 8px}

@@ -264,7 +264,10 @@ for a in AREAS["building"]:
         rec["big"] = 1
     if name:
         rec["n"] = name
-    if a["id"] in LM_RING_IDS:
+    if name in C.COLORS:
+        rec["wc"] = C.COLORS[name]["wall"]
+        rec["rc"] = C.COLORS[name]["roof"]
+    if a["id"] in LM_RING_IDS or a["id"] in C.SKIP_BUILDINGS:
         rec["lm"] = 1
     rec["id"] = a["id"]
     BUILDINGS.append(rec)
@@ -719,10 +722,8 @@ for p in items:
 
 # 入口
 for e in C.ENTRANCES:
-    if e["at"] == "toll_booth":
-        pts = [P(*nodes[k][:2]) for k, v in nodes.items() if v[2].get("barrier") == "toll_booth" and in_park_pt(*P(*nodes[k][:2]))]
-        if not pts:
-            continue
+    pts = [P(*v[:2]) for k, v in nodes.items() if v[2].get("barrier") == "toll_booth" and v[2].get("name") == e["at"]]
+    if pts:
         x = sum(p[0] for p in pts) / len(pts)
         z = sum(p[1] for p in pts) / len(pts)
         q = {"x": x, "z": z, "ring": None, "osm": "", "name": e["name"], "tags": {}}

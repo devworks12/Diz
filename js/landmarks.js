@@ -77,17 +77,37 @@ export function buildLandmarks(model) {
           if (dp < 4) h = Math.min(h, Math.max(0, (dp - 1.9) * 5.0)); // 通路は切り通し（谷）に
           return h;
         };
-        const cLow = col('#6e5a40'), cGreen = col('#4f6a34'), cMid = col('#87472f'), cHigh = col('#5b3226'), cTop = col('#2d2320');
+        const cLow = col('#6f6250'), cGreen = col('#55703a'), cMid = col('#7b5444'), cHigh = col('#5e463e'), cTop = col('#35302e');
         const colfn = (x, z, h, ny) => {
           const n = fbm(x * 0.15, z * 0.15, 3);
           let c = h < 8 ? cLow.clone().lerp(cMid, h / 8) : h < 30 ? cMid.clone().lerp(cHigh, (h - 8) / 22) : cHigh.clone().lerp(cTop, Math.min(1, (h - 30) / 20));
-          if (ny > 0.75 && h < 16 && n > 0.48) c.lerp(cGreen, 0.7);
+          if (ny > 0.6 && h < 20 && n > 0.4) c.lerp(cGreen, 0.8);
           return c.multiplyScalar(0.82 + n * 0.35);
         };
         const g = heightfield(outer, holes, model.mobile ? 2.2 : 1.5, hfn, colfn, -0.2);
         A.stone.append(g);
-        // 火口の赤い光（夜に強く）
+        // 火口の赤い光と、斜面を流れる溶岩（夜に強く光る）
         A.glow.add(new THREE.CircleGeometry(6, 20).rotateX(-Math.PI / 2), M(px, hfn(px, pz) + 0.3, pz), col('#ff6a20'));
+        const lava = col('#ff5a14');
+        for (const a0 of [0.6, 2.1, 3.4, 4.7, 5.6]) {
+          let x = px + Math.cos(a0) * 10, z = pz + Math.sin(a0) * 10, w = 1.4;
+          let prev = null;
+          for (let k = 0; k < 40; k++) {
+            const h = hfn(x, z);
+            if (h < 9) break;
+            // 下り坂の向きへ（少しゆらす）
+            const e = 1.2, gx = hfn(x + e, z) - hfn(x - e, z), gz = hfn(x, z + e) - hfn(x, z - e);
+            const gl = Math.hypot(gx, gz) || 1;
+            const dx = -gx / gl + (fbm(x * 0.3, z * 0.3) - 0.5) * 0.5, dz = -gz / gl + (fbm(z * 0.3, x * 0.3) - 0.5) * 0.5;
+            const dl = Math.hypot(dx, dz) || 1;
+            const nx = (-dz / dl) * w, nz = (dx / dl) * w;
+            const cur = [[x + nx, h + 0.2, z + nz], [x - nx, h + 0.2, z - nz]];
+            if (prev) A.glow.quad(prev[0], prev[1], cur[1], cur[0], [0, 1, 0], [0, 0], [1, 0], [1, 1], [0, 1], lava);
+            prev = cur;
+            x += (dx / dl) * 1.6; z += (dz / dl) * 1.6;
+            w = Math.max(0.5, w * 0.97);
+          }
+        }
         model.labels.push({ text: L.n, pos: new THREE.Vector3(px, L.h + 6, pz), cls: 'lm' });
         break;
       }
@@ -155,10 +175,11 @@ export function buildLandmarks(model) {
           facadeWalls(A.pd, q, y0, y1, white, y1 - y0);
           A.plaster.add(flatGeo(ringArea(q) > 0 ? q : q.slice().reverse(), [], y1, 0.3), new THREE.Matrix4(), white);
         }
-        for (const t of [0.42, 0.56]) {
+        // 3本の煙突（赤に黒い帯）
+        for (const t of [0.36, 0.5, 0.64]) {
           const [x, z] = P(t, 0);
-          cyl(A.plaster, x, deckY + 9.4, z, 2.3, 2.1, 11, cream, 20);
-          cyl(A.plaster, x, deckY + 20.4, z, 2.1, 2.1, 1.8, col('#1a1a1a'), 20);
+          cyl(A.plaster, x, deckY + 9.4, z, 2.2, 2.0, 9.5, col('#b3261e'), 20);
+          cyl(A.plaster, x, deckY + 18.9, z, 2.0, 2.0, 2.6, col('#141414'), 20);
         }
         for (const t of [0.1, 0.9]) {
           const [x, z] = P(t, 0);
@@ -281,7 +302,7 @@ export function buildLandmarks(model) {
         }
         A.stone.add(flatGeo(wallR, [], 8.8, 0.25), new THREE.Matrix4(), col('#b8a07a'));
         cyl(A.stone, cx + 4, 0, cz - 3, 5.6, 5.2, 21, stone, 20);
-        dome(A.metal, cx + 4, 21, cz - 3, 5.4, copper);
+        dome(A.metal, cx + 4, 21, cz - 3, 5.4, col('#d4a640'));
         cyl(A.metal, cx + 4, 26.4, cz - 3, 0.2, 0.1, 2.8, col('#c9a040'), 6);
         cyl(A.stone, cx - 9, 0, cz + 7, 3.2, 3.0, 14, stone, 14);
         cone(A.plaster, cx - 9, 14, cz + 7, 3.6, 5, roofC, 14);
@@ -368,7 +389,7 @@ export function buildLandmarks(model) {
     add(A[st], m);
   }
   if (A.glow.count) {
-    const gm = new THREE.MeshStandardMaterial({ vertexColors: true, emissive: 0xff7a30, emissiveIntensity: 0.2, roughness: 0.6 });
+    const gm = new THREE.MeshStandardMaterial({ vertexColors: true, emissive: 0xff6a20, emissiveIntensity: 0.7, roughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 });
     model.nightMats.push([gm, 'glow', 1]);
     add(A.glow, gm, false);
   }

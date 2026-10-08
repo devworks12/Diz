@@ -43,7 +43,7 @@
         <label for="toInput">目的地 ▾</label>
         <div class="cbox"><span class="ic sel none"></span><input id="toInput" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="toList" placeholder="タップで一覧・名前で検索" autocomplete="off" spellcheck="false"></div>
       </div>
-      <button type="submit" id="goBtn" aria-label="歩いてみる"><span class="gl">歩いてみる </span>▶</button>
+      <button type="submit" id="goBtn" aria-label="歩いてみる"><span class="gl">歩いてみる</span><i class="si"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4.5v15l12.5-7.5z"/></svg></i></button>
     </div>
     <div class="row subrow">
       <div class="chips" id="quick"></div>
@@ -81,12 +81,23 @@
 
 <!-- エリア・表示の切り替え -->
 <div id="side" class="panel">
-  <div id="areas"></div>
-  <div class="sep"></div>
+  <h4>さがす</h4>
   <div id="cats"></div>
   <div class="sep"></div>
-  <div class="tbtns"><button type="button" id="nightBtn" class="tbtn" aria-pressed="false">🌙 夜</button><button type="button" id="locBtn" class="tbtn">📍 現在地</button></div>
+  <h4>エリアへ移動</h4>
+  <div id="areas"></div>
+  <div class="sep"></div>
+  <div class="tbtns"><button type="button" id="nightBtn" class="tbtn" aria-pressed="false">夜</button><button type="button" id="locBtn" class="tbtn">現在地</button></div>
 </div>
+
+<!-- さがす: カテゴリの位置と近い順の一覧 -->
+<aside id="catSheet" class="panel" hidden>
+  <div class="grip" aria-hidden="true"></div>
+  <div class="chead"><div class="ch"></div><button type="button" class="iconbtn sm" id="catClose" aria-label="閉じる"></button></div>
+  <div class="cbase"></div>
+  <div class="clist"></div>
+</aside>
+<div id="toast" role="status" hidden></div>
 
 <!-- 施設をタップしたとき -->
 <div id="pop" class="panel" hidden>

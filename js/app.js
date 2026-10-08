@@ -11,6 +11,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { ParkModel } from './model.js';
 import { Graph } from './route.js';
+import { ICON, navIcon } from './icons.js';
 
 const $ = (s) => document.querySelector(s);
 const MOBILE = matchMedia('(pointer: coarse)').matches || innerWidth < 760;
@@ -40,15 +41,17 @@ const graph = new Graph(data, (x, y, z) => new THREE.Vector3(x, y, z));
 const poiBy = Object.fromEntries(data.pois.map((p) => [p.id, p]));
 const portBy = Object.fromEntries(data.ports.map((p) => [p.key, p]));
 const CATS = {
-  entrance: { icon: '🚪', color: '#5f7896', label: '入口', short: '入口' },
-  attr: { icon: '🎢', color: '#d9573a', label: 'アトラクション', short: 'アトラク' },
-  show: { icon: '🎭', color: '#9a52c8', label: 'ショー・ステージ', short: 'ショー' },
-  food: { icon: '🍴', color: '#2f9a5c', label: 'レストラン・フード', short: 'フード' },
-  shop: { icon: '🛍', color: '#c74a86', label: 'ショップ', short: 'ショップ' },
-  toilet: { icon: '🚻', color: '#2f6fd0', label: 'トイレ', short: 'トイレ' },
-  service: { icon: 'ℹ', color: '#56677e', label: 'サービス', short: 'サービス' },
-  here: { icon: '📍', color: '#e23d5a', label: '現在地', short: '現在地' },
+  entrance: { color: '#5f7896', label: '入口', short: '入口' },
+  attr: { color: '#d9573a', label: 'アトラクション', short: 'アトラク' },
+  show: { color: '#9a52c8', label: 'ショー・ステージ', short: 'ショー' },
+  food: { color: '#2f9a5c', label: 'レストラン・フード', short: 'フード' },
+  shop: { color: '#c74a86', label: 'ショップ', short: 'ショップ' },
+  toilet: { color: '#2f6fd0', label: 'トイレ', short: 'トイレ' },
+  service: { color: '#56677e', label: 'サービス', short: 'サービス' },
+  here: { color: '#e23d5a', label: '現在地', short: '現在地' },
 };
+// 「さがす」に出すカテゴリ（押すとパーク全体での位置と、近い順の一覧）
+const FIND = ['toilet', 'food', 'shop', 'attr', 'show', 'service'];
 
 // ---------------------------------------------------------------- three.js
 const canvas = $('#stage');
@@ -161,7 +164,9 @@ const model = new ParkModel(data, scene, renderer, { mobile: MOBILE });
 
 // ---------------------------------------------------------------- ラベル・施設のピン
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const icon = (c, extra = '') => `<span class="ic${extra}" style="--c:${CATS[c]?.color || '#556'}"><span>${CATS[c]?.icon || ''}</span></span>`;
+const icon = (c, extra = '') => `<span class="ic${extra}" style="--c:${CATS[c]?.color || '#556'}"><i>${ICON[c] || ''}</i></span>`;
+// ボタンなどに直接置くアイコン
+const svg = (name) => `<i class="si">${ICON[name] || ''}</i>`;
 const labels = model.labels.map((L) => {
   const el = document.createElement('div');
   el.className = 'lbl ' + L.cls;
@@ -174,7 +179,7 @@ const labels = model.labels.map((L) => {
 const pins = data.pois.map((p) => {
   const el = document.createElement('div');
   el.className = 'pin';
-  el.innerHTML = icon(p.c) + `<span class="nm">${esc(p.n)}</span>`;
+  el.innerHTML = icon(p.c) + `<b class="rk"></b><span class="nm">${esc(p.n)}</span>`;
   el.style.display = 'none';
   el.style.pointerEvents = 'none';
   document.body.appendChild(el);
@@ -207,15 +212,16 @@ function updateLabels() {
   const placed = [];
   const hit = (rc) => placed.some((q) => rc[0] < q[2] && rc[2] > q[0] && rc[1] < q[3] && rc[3] > q[1]);
   // 選んだ施設 → ピン（重要な順）→ ランドマーク → エリア名
-  const order = pins.slice().sort((a, b) => (b.sel - a.sel) || (PRIO[a.p.c] - PRIO[b.p.c]));
+  const order = pins.slice().sort((a, b) => (b.sel - a.sel) || ((a.rank || 999) - (b.rank || 999)) || (PRIO[a.p.c] - PRIO[b.p.c]));
   for (const P of order) {
-    let show = !pov && (P.sel || (state.cats.has(P.p.c) && dist < SHOW_DIST[P.p.c] * (MOBILE ? 0.8 : 1)));
+    const cv = state.catView;
+    let show = !pov && (P.sel || (cv ? P.p.c === cv : (state.cats.has(P.p.c) && dist < SHOW_DIST[P.p.c] * (MOBILE ? 0.8 : 1))));
     let xy = null;
     if (show) xy = project(P.pos);
     if (!xy) show = false;
     let named = false;
     if (show) {
-      named = P.sel || dist < NAME_DIST[P.p.c] * (MOBILE ? 0.8 : 1);
+      named = P.sel || (cv ? P.p.c !== 'toilet' && (P.rank <= 5 || dist < 700) : dist < NAME_DIST[P.p.c] * (MOBILE ? 0.8 : 1));
       const w = named ? P.w : 26;
       const rc = [xy[0] - 13, xy[1] - 28, xy[0] - 13 + w, xy[1]];
       if (!P.sel && hit(rc)) {
@@ -269,22 +275,20 @@ function updateLabels() {
     box.appendChild(b);
   }
   const cb = $('#cats');
-  for (const [k, c] of Object.entries(CATS)) {
-    if (k === 'here' || k === 'entrance') continue;
+  for (const k of FIND) {
+    const c = CATS[k];
     const b = document.createElement('button');
     b.type = 'button';
-    b.setAttribute('aria-pressed', 'true');
-    b.innerHTML = `<span>${c.icon}</span>`;
+    b.dataset.cat = k;
     b.className = 'cat';
-    b.title = c.label + 'のピンを表示';
-    b.onclick = () => {
-      const on = !state.cats.has(k);
-      if (on) state.cats.add(k); else state.cats.delete(k);
-      labelsDirty = true;
-      b.setAttribute('aria-pressed', String(on));
-    };
+    b.innerHTML = `${icon(k)}<span class="lg">${c.label}</span><span class="sh">${c.short}</span>`;
+    b.title = c.label + 'の位置をパーク全体で見る';
+    b.onclick = () => (state.catView === k ? closeCat() : openCat(k));
     cb.appendChild(b);
   }
+  $('#nightBtn').innerHTML = `${svg('moon')}<span>夜</span>`;
+  $('#locBtn').innerHTML = `${svg('here')}<span>現在地</span>`;
+  $('#swapBtn').innerHTML = svg('swap');
   $('#nightBtn').onclick = () => setNight(!state.night);
   $('#locBtn').onclick = () => locate(true);
 }
@@ -294,7 +298,7 @@ function setNight(on) {
   labelsDirty = true;
   state.night = on;
   $('#nightBtn').setAttribute('aria-pressed', String(on));
-  $('#nightBtn').textContent = on ? '☀ 昼' : '🌙 夜';
+  $('#nightBtn').innerHTML = on ? `${svg('sun')}<span>昼</span>` : `${svg('moon')}<span>夜</span>`;
   const U = sky.material.uniforms;
   U.top.value.set(on ? 0x040914 : 0x2f6fc0); U.mid.value.set(on ? 0x0b1630 : 0x7fb0e0); U.hor.value.set(on ? 0x1c2a48 : 0xdbe8f2); U.glow.value = on ? 0 : 1;
   scene.environmentIntensity = on ? 0.12 : 0.7;
@@ -319,9 +323,9 @@ const PJ = (() => {
 function locate(asFrom) {
   if (!navigator.geolocation) { $('#err').textContent = 'この端末では現在地を使えません。'; return; }
   $('#err').textContent = '';
-  $('#locBtn').textContent = '📍 測位中…';
+  $('#locBtn').innerHTML = `${svg('here')}<span>測位中…</span>`;
   navigator.geolocation.getCurrentPosition((pos) => {
-    $('#locBtn').textContent = '📍 現在地';
+    $('#locBtn').innerHTML = `${svg('here')}<span>現在地</span>`;
     const [x, z] = PJ(pos.coords.latitude, pos.coords.longitude);
     const nr = graph.nearest(x, z);
     if (nr.d > 120) { $('#err').textContent = `現在地がパークの外のようです（園内の通路から約${Math.round(nr.d)}m）。`; return; }
@@ -330,9 +334,10 @@ function locate(asFrom) {
     herePin.pos.set(x, 1.5, z);
     state.here = { x, z, name: '現在地', id: 'here' };
     flyTo(new THREE.Vector3(x, 0, z), new THREE.Vector3(x + 60, 110, z + 110), 900);
-    if (asFrom) setPick('from', 'here');
+    if (state.catView) openCat(state.catView, { keepView: true });
+    else if (asFrom) setPick('from', 'here');
   }, (err) => {
-    $('#locBtn').textContent = '📍 現在地';
+    $('#locBtn').innerHTML = `${svg('here')}<span>現在地</span>`;
     $('#err').textContent = err.code === 1 ? '位置情報の利用が許可されていません。' : '現在地を取得できませんでした。';
   }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 20000 });
 }
@@ -340,7 +345,9 @@ function locate(asFrom) {
 // ---------------------------------------------------------------- 選択（カテゴリ別の一覧＋検索）
 const GROUPS = ['here', 'entrance', 'attr', 'show', 'food', 'shop', 'toilet', 'service'];
 const portOrder = Object.fromEntries(data.ports.map((p, i) => [p.key, i]));
-const ITEMS = data.pois.slice().sort((a, b) => (portOrder[a.p] - portOrder[b.p]) || a.n.localeCompare(b.n, 'ja'));
+const poiIx = new Map(data.pois.map((p, i) => [p, i]));
+// 入口はデータの順（メインエントランスが先）、ほかはエリア順・名前順
+const ITEMS = data.pois.slice().sort((a, b) => (a.c === 'entrance' && b.c === 'entrance' ? poiIx.get(a) - poiIx.get(b) : 0) || (portOrder[a.p] - portOrder[b.p]) || a.n.localeCompare(b.n, 'ja'));
 const keyOf = (k) => (k === 'here' ? state.here : poiBy[k]);
 const nameOf = (k) => (k === 'here' ? '現在地' : poiBy[k]?.n || '');
 const catOf = (k) => (k === 'here' ? 'here' : poiBy[k]?.c);
@@ -506,35 +513,127 @@ function setSpeed(v) {
 for (const b of document.querySelectorAll('#speedSeg button')) b.onclick = () => setSpeed(+b.dataset.v);
 $('#speedBtn').onclick = (e) => { e.stopPropagation(); setSpeed((state.speed % 3) + 1); };
 
-// 「最寄りの○○」とおすすめの経路
+// 「近くのトイレ」などとおすすめの経路
 function renderQuick() {
   const q = $('#quick');
   q.innerHTML = '';
-  const add = (txt, fn, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.className = cls; b.onclick = fn; q.appendChild(b); };
-  const base = state.from;
-  for (const [c, txt] of [['toilet', '🚻 最寄りのトイレ'], ['food', '🍴 最寄りのフード'], ['shop', '🛍 最寄りのショップ']]) {
-    add(txt, () => nearest(c), 'q');
-  }
-  if (!base) {
-    const sh = (n) => n.replace(/（.*?）|：.*$/g, '').replace('メインエントランス', '入口').replace(/^(.{11}).+$/, '$1…');
-    for (const [f, t] of (data.presets || []).slice(0, MOBILE ? 4 : 2)) {
+  const add = (html, fn, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.innerHTML = html; b.className = cls; b.onclick = fn; q.appendChild(b); return b; };
+  for (const c of ['toilet', 'food', 'shop']) add(`${icon(c)}<span>近くの${CATS[c].short}</span>`, () => openCat(c), 'q');
+  if (!state.from && !MOBILE) {
+    const sh = (n) => n.replace(/（.*?）|：.*$/g, '').replace('パークエントランス・ノース', '入口').replace(/^(.{11}).+$/, '$1…');
+    for (const [f, t] of (data.presets || []).slice(0, 2)) {
       if (!poiBy[f] || !poiBy[t]) continue;
-      add(`${sh(poiBy[f].n)} → ${sh(poiBy[t].n)}`, () => { state.from = f; combos.from.show(); setPick('to', t); });
+      add(`${esc(sh(poiBy[f].n))} → ${esc(sh(poiBy[t].n))}`, () => { state.from = f; combos.from.show(); setPick('to', t); });
     }
   }
 }
-function nearest(cat) {
-  const base = state.from || (state.here ? 'here' : null);
-  if (!base) { $('#err').textContent = '先に「出発地」を選ぶか、📍 現在地 を押してください。'; combos.from.open(''); return; }
-  const key = base === 'here' ? state.here : base;
-  const list = graph.nearestOf(key, cat, 4);
-  const near = list[0];
-  if (!near) return;
-  if (!state.from) { state.from = 'here'; combos.from.show(); }
-  state.nearList = { cat, from: state.from, list };
-  setPick('to', near.p.id);
-}
 renderQuick();
+
+// ---------------------------------------------------------------- さがす（カテゴリをパーク全体で見る＋近い順の一覧）
+// 基準: 出発地 → 現在地（GPS）→ 地図の中心 の順に使う
+function catBase() {
+  if (state.from && keyOf(state.from)) {
+    const k = state.from === 'here' ? state.here : state.from;
+    return { key: k, from: state.from, label: `${nameOf(state.from)}から歩く時間順`, kind: 'from' };
+  }
+  if (state.here) return { key: state.here, from: 'here', label: '現在地から歩く時間順', kind: 'here' };
+  const t = controls.target;
+  return { key: { x: t.x, z: t.z, name: '地図の中心' }, from: null, label: '地図の中心から近い順', kind: 'center' };
+}
+function openCat(cat, opt = {}) {
+  hidePop();
+  for (const k in combos) combos[k].close();
+  state.catView = cat;
+  labelsDirty = true;
+  for (const b of document.querySelectorAll('#cats .cat')) b.setAttribute('aria-pressed', String(b.dataset.cat === cat));
+  const base = catBase();
+  const list = graph.nearestOf(base.key, cat, 999);
+  state.catList = { cat, base, list };
+  for (const P of pins) P.rank = 0;
+  const pinBy = new Map(pins.map((P) => [P.p.id, P]));
+  list.forEach((x, i) => { const P = pinBy.get(x.p.id); if (P) { P.rank = i + 1; P.el.querySelector('.rk').textContent = i < 3 ? String(i + 1) : ''; P.el.classList.toggle('top', i < 3); } });
+  // 一覧
+  const sh = $('#catSheet');
+  const c = CATS[cat];
+  sh.querySelector('.ch').innerHTML = `${icon(cat)}<b>${esc(c.label)}</b><span class="cnt">${list.length}か所</span>`;
+  const bl = sh.querySelector('.cbase');
+  bl.innerHTML = '';
+  const lab = document.createElement('span');
+  lab.textContent = base.label;
+  bl.appendChild(lab);
+  if (base.kind === 'center') {
+    const rb = document.createElement('button'); rb.type = 'button'; rb.className = 'mini'; rb.textContent = 'この辺りで探し直す';
+    rb.onclick = () => openCat(cat, { keepView: true });
+    const gb = document.createElement('button'); gb.type = 'button'; gb.className = 'mini gold'; gb.innerHTML = `${svg('here')}現在地から`;
+    gb.onclick = () => locate(false);
+    bl.append(rb, gb);
+  }
+  const ul = sh.querySelector('.clist');
+  ul.innerHTML = '';
+  list.forEach((x, i) => {
+    const p = x.p;
+    const li = document.createElement('button');
+    li.type = 'button';
+    li.className = 'citem' + (i < 3 ? ' top' : '');
+    const pc = portBy[p.p];
+    // トイレ・ワゴンは「どこにあるか」を見出しに
+    const generic = p.c === 'toilet' || /ワゴン|販売機|コインロッカー/.test(p.n);
+    const name = generic && p.sub ? (p.c === 'toilet' ? p.sub : `${p.n}（${p.sub}）`) : p.n;
+    const sub = generic ? pc?.name : [p.sub, pc?.name].filter(Boolean).join('・');
+    const mins = Math.max(1, Math.round(x.t / 60));
+    li.innerHTML = `<span class="rk">${i + 1}</span><span class="t"><b></b><small></small></span><span class="tm mono">${base.kind === 'center' ? '約' + Math.round(x.t * 1.15 / 10) * 10 + 'm' : '約' + mins + '分'}</span>`;
+    li.querySelector('b').textContent = name;
+    li.querySelector('small').textContent = sub;
+    li.onclick = () => chooseFromCat(p.id);
+    ul.appendChild(li);
+  });
+  ul.scrollTop = 0;
+  sh.hidden = false;
+  $('#board').hidden = true;
+  $('#boardMini').hidden = true;
+  $('#viewBtns').hidden = true;
+  document.body.classList.add('catview');
+  layoutUI();
+  if (!opt.keepView) fitPoints(list.map((x) => new THREE.Vector3(x.p.x, 0, x.p.z)));
+}
+function closeCat() {
+  if (!state.catView) return;
+  state.catView = null;
+  state.catList = null;
+  labelsDirty = true;
+  for (const P of pins) { P.rank = 0; P.el.classList.remove('top'); P.el.querySelector('.rk').textContent = ''; }
+  for (const b of document.querySelectorAll('#cats .cat')) b.setAttribute('aria-pressed', 'false');
+  $('#catSheet').hidden = true;
+  document.body.classList.remove('catview');
+  if (state.routes.length) { $('#board').hidden = !!state.folded; $('#boardMini').hidden = !state.folded; $('#viewBtns').hidden = false; }
+  layoutUI();
+}
+function chooseFromCat(id) {
+  const base = state.catList?.base;
+  closeCat();
+  if (base && base.from) {
+    if (!state.from) { state.from = base.from; combos.from.show(); }
+    setPick('to', id);
+    return;
+  }
+  // 出発地がまだ無いとき: 目的地にして、出発地を選んでもらう
+  setPick('to', id);
+  toast('目的地にしました。出発地を選ぶと、ルートが出ます');
+  setTimeout(() => combos.from.open(''), 650);
+}
+$('#catClose').onclick = () => closeCat();
+swipe($('#catSheet .grip'), 1, () => closeCat());
+swipe($('#catSheet .chead'), 1, () => closeCat());
+$('#catClose').innerHTML = svg('close');
+let toastT = 0;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.hidden = false;
+  t.classList.add('on');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => { t.classList.remove('on'); setTimeout(() => (t.hidden = true), 300); }, 3200);
+}
 
 $('#controls').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -585,6 +684,7 @@ swipe($('#boardMini'), -1, () => setFold(false));
 
 function resetToStart() {
   stopPov();
+  closeCat();
   state.routes = [];
   state.sel = 0;
   state.routesFor = null;
@@ -670,6 +770,7 @@ $('#popTo').onclick = () => { const k = popFor.p.id; hidePop(); if (!state.from 
 // ---------------------------------------------------------------- 経路
 function go(play) {
   if (!state.from || !state.to || state.from === state.to) return;
+  closeCat();
   const rs = graph.routes(state.from === 'here' ? state.here : state.from, state.to === 'here' ? state.here : state.to);
   if (!rs.length) { $('#err').textContent = 'ルートが見つかりませんでした（地図データ不足の可能性があります）。'; return; }
   state.routes = rs;
@@ -695,21 +796,6 @@ function renderBoard() {
   sm.querySelector('.n2').textContent = nameOf(state.to);
   const toP = poiBy[state.to];
   if (toP?.sub) { const sb = document.createElement('small'); sb.textContent = toP.sub; sm.querySelector('.n2').appendChild(sb); }
-  // 「最寄りの○○」で選んだときは、ほかの近い候補も出す
-  const nl = state.nearList;
-  if (nl && nl.from === state.from && nl.list.some((x) => x.p.id === state.to)) {
-    const box = document.createElement('div');
-    box.className = 'alts';
-    for (const x of nl.list) {
-      if (x.p.id === state.to) continue;
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = `${x.p.c === 'toilet' ? 'トイレ（' + (x.p.sub || '') + '）' : x.p.n}・約${Math.max(1, Math.round(x.t / 60))}分`;
-      b.onclick = () => setPick('to', x.p.id);
-      box.appendChild(b);
-    }
-    if (box.children.length) { const lab = document.createElement('div'); lab.className = 'meta'; lab.textContent = 'ほかの近い候補'; sm.append(lab, box); }
-  }
   sm.querySelector('.big').textContent = `約${Math.round(r0.dist / 10) * 10}m`;
   sm.querySelector('.tm').textContent = `徒歩の目安 約${Math.max(1, Math.round(r0.time / 60))}分`;
   sm.querySelector('.cnt').textContent = state.routes.length > 1 ? `ルート候補 ${state.routes.length} 本（押すと切り替わります）` : '';
@@ -745,7 +831,7 @@ function renderSteps(r) {
     const li = document.createElement('li');
     li.className = s.cls || '';
     li.innerHTML = '<span class="k"></span><span><b></b><small></small></span><em class="mono"></em>';
-    li.querySelector('.k').textContent = s.icon;
+    li.querySelector('.k').innerHTML = navIcon(s.icon);
     li.querySelector('b').textContent = s.text;
     li.querySelector('small').textContent = s.sub || '';
     li.querySelector('em').textContent = s.dist ? Math.round(s.dist) + 'm' : '';
@@ -925,20 +1011,24 @@ function povRouteVisuals(on) {
 function fitRoute() {
   const r = state.routes[state.sel];
   if (!r) return;
+  fitPoints(r.pts);
+}
+// 点の集まりが、パネルに隠れていない範囲に収まるように視点を動かす
+function fitPoints(all) {
+  if (!all.length) return;
   state.userMoved = false;
   const box = new THREE.Box3();
-  for (const p of r.pts) box.expandByPoint(p);
+  for (const p of all) box.expandByPoint(p);
   const c = box.getCenter(new THREE.Vector3());
   const len = box.getSize(new THREE.Vector3()).length();
-  // 短い経路は真上に近い角度から（手前の建物で隠れないように）
+  // 狭い範囲は真上に近い角度から（手前の建物で隠れないように）
   const dir = (len < 250 ? new THREE.Vector3(0.25, 1.7, 0.6) : new THREE.Vector3(0.35, 1.0, 0.85)).normalize();
-  // パネルに隠れていない範囲に経路が収まる距離を探す（視点のずらしで中心はその範囲の中心に来る）
   const fr = freeRect();
   const cam = new THREE.PerspectiveCamera(camera.fov, innerWidth / innerHeight, 1, 10000);
   const pts = [];
-  const step = Math.max(1, Math.floor(r.pts.length / 60));
-  for (let i = 0; i < r.pts.length; i += step) pts.push(r.pts[i]);
-  pts.push(r.pts[r.pts.length - 1]);
+  const step = Math.max(1, Math.floor(all.length / 80));
+  for (let i = 0; i < all.length; i += step) pts.push(all[i]);
+  pts.push(all[all.length - 1]);
   const mx = Math.max(30, fr.w / 2 - 34), my = Math.max(30, fr.h / 2 - 40);
   const fits = (D) => {
     cam.position.copy(c).addScaledVector(dir, D);
@@ -960,7 +1050,8 @@ function freeRect() {
   const W = innerWidth, H = innerHeight, mobile = W < 760;
   const vis = (el) => el && !el.hidden && getComputedStyle(el).display !== 'none';
   let x0 = 0, x1 = W, y0 = 0, y1 = H;
-  const board = $('#board'), mini = $('#boardMini'), side = $('#side'), ctr = $('#controls');
+  const cs = $('#catSheet');
+  const board = vis(cs) ? cs : $('#board'), mini = $('#boardMini'), side = $('#side'), ctr = $('#controls');
   if (mobile) {
     y0 = Math.max(ctr.getBoundingClientRect().bottom, vis(side) ? side.getBoundingClientRect().bottom : 0) + 4;
     if (vis(board)) y1 = board.getBoundingClientRect().top;
@@ -981,7 +1072,7 @@ function updateViewOffset(dt) {
     return;
   }
   let tx = 0, ty = 0;
-  if (state.routes.length) { const fr = freeRect(); tx = innerWidth / 2 - fr.cx; ty = innerHeight / 2 - fr.cy; }
+  if (state.routes.length || state.catView) { const fr = freeRect(); tx = innerWidth / 2 - fr.cx; ty = innerHeight / 2 - fr.cy; }
   const a = 1 - Math.exp(-dt * 8);
   viewOff.x += (tx - viewOff.x) * a;
   viewOff.y += (ty - viewOff.y) * a;
@@ -1084,7 +1175,7 @@ function stepPov(now) {
   camera.position.set(pos.x, groundY(pos) + EYE, pos.z);
   camera.lookAt(pv.look);
   const nav = r.navAt(s);
-  $('#navIcon').textContent = nav.icon;
+  if (pv.icon !== nav.icon) { pv.icon = nav.icon; $('#navIcon').innerHTML = navIcon(nav.icon); }
   $('#navIcon').className = nav.cls || '';
   $('#navText').textContent = nav.text;
   $('#navNext').textContent = nav.sub ? nav.sub : nav.next ? '次：' + nav.next.text : '';

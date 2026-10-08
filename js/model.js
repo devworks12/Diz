@@ -28,6 +28,17 @@ export function fbm(x, z, oct = 4) {
   return s;
 }
 
+const sm01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+// 大きな建物のうち、山・岩・森として見せるもの
+function naturalKind(b) {
+  const n = b.n || '';
+  if (n.includes('アナとエルサ')) return 'snow';
+  if (b.p === 'ML') return 'coral';
+  if (b.p === 'FS' || b.p === 'LR') return 'jungle';
+  if (b.p === 'MI') return 'rock';
+  return null;
+}
+
 // ---------------------------------------------------------------- 頂点を貯める入れ物
 // 伸びる Float32Array（JS の配列に何百万個も数値を積むとスマホのメモリが足りなくなるため）
 class FArr {
@@ -240,6 +251,19 @@ const PAL = {
   mi: { walls: ['#9a7a64', '#8a7a6c', '#a88a74'], roof: ['#5a4232', '#4a4a48'], trim: '#6a4e38', pitch: 0.4, roofKind: 'flat', plaza: '#b09276', paving: 'stone' },
   fs: { walls: ['#efe7d8', '#e0d2b4', '#d4dae0', '#ecd8c6', '#f4ecd8'], roof: ['#3f5f58', '#4a5a6a', '#5a4a40', '#3a5070'], trim: '#6e4e32', pitch: 1.0, roofKind: 'gable', plaza: '#b4b0a8', paving: 'cobble' },
 };
+// エリアごとの舗装（公式マップの色合いに合わせる）: plaza=広場, path=通路, paving=敷き方
+const PAVE = {
+  EN: { plaza: '#c98872', path: '#d29a84', paving: 'brick' },     // エントランス: テラコッタのれんが
+  MH: { plaza: '#d9cdbb', path: '#e2d8c8', paving: 'stone' },     // 明るい石畳
+  AW: { plaza: '#beb3a6', path: '#cbc2b6', paving: 'brick' },
+  CC: { plaza: '#cfc5b2', path: '#d8cfbd', paving: 'cobble' },
+  PD: { plaza: '#c99996', path: '#cf9a98', paving: 'stone' },     // 赤みのある舗装
+  LR: { plaza: '#c8ad84', path: '#cdb38c', paving: 'dirt' },      // 土の道
+  AC: { plaza: '#e0c99c', path: '#e4d0a6', paving: 'stone' },     // 砂色
+  ML: { plaza: '#e6cfa2', path: '#e8d5ac', paving: 'cobble' },    // 砂浜の色
+  MI: { plaza: '#a99682', path: '#b3a08a', paving: 'stone' },     // 火山の岩の色
+  FS: { plaza: '#c7b3c6', path: '#cdbacc', paving: 'cobble' },    // うす紫の小道
+};
 const ROCK = { MH: '#a89a88', EN: '#a89a88', AW: '#8f8a84', CC: '#8f8a84', PD: '#8a8682', LR: '#b49468', AC: '#c4a47a', ML: '#c8907c', MI: '#8a5440', FS: '#8e9094' };
 
 // ================================================================ 模型
@@ -255,6 +279,7 @@ export class ParkModel {
     this.portBy = Object.fromEntries(d.ports.map((p) => [p.key, p]));
     this.portIx = d.ports.map((p) => p.key);
     this.nightMats = [];   // 夜に光るもの [material, 昼の強さ, 夜の強さ]
+    this.extraTrees = [];  // 山の上などに足す木 [x, z, 大きさ, エリア, 高さ]
     this.noReflect = [];   // 水面の映り込みには描かない細かいもの（軽くするため）
     this.pathIdx = new SegIndex(8);
     const N = d.nodes, E = d.edges;
@@ -362,7 +387,7 @@ export class ParkModel {
         const byKind = {};
         for (const a of G.plaza) {
           const c = centroid(ring(a.o));
-          const st = PAL[this.portBy[this.portAt(...c)]?.style || 'med'];
+          const st = PAVE[this.portAt(...c)] || PAVE.MH;
           (byKind[st.paving] ||= []).push(colorize(flatGeo(ring(a.o), (a.h || []).map(ring), y, 1 / 3), col(st.plaza)));
         }
         for (const [pk, gs] of Object.entries(byKind)) {
@@ -512,16 +537,21 @@ export class ParkModel {
     const GH = 4.2, FH = 3.6, BAY = 4.0;
     const rnd = T.rng(99);
     this.buildingLabels = [];
+    const natural = [];
     for (const b of d.buildings) {
       if (b.lm) continue;                    // ランドマークは専用の形で作る
       let r = ring(b.r);
       if (ringArea(r) < 0) r = r.reverse();
       const A = ringArea(r);
+      // 自然のエリアの大きな建物は、公式マップのように山・岩・森に見せる（雪山・サンゴの岩・ジャングル）
+      const nk = b.big && naturalKind(b);
+      if (nk) { natural.push({ b, r, kind: nk }); continue; }
       const style = b.big ? 'plain' : b.s;
       const pal = PAL[b.s] || PAL.med;
       const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
-      const wallC = b.big ? col('#b9ad98').multiplyScalar(0.9 + rnd() * 0.1) : col(pick(pal.walls));
-      const roofC = col(pick(pal.roof));
+      // 奥の大きな建物（ショービル）は、木々になじむ灰緑色（公式マップでも目立たない）
+      const wallC = b.wc ? col(b.wc) : b.big ? col('#a3a48f').multiplyScalar(0.9 + rnd() * 0.1) : col(pick(pal.walls));
+      const roofC = b.rc ? col(b.rc) : col(pick(pal.roof));
       const trimC = col(pal.trim);
       const h = b.h, mh = b.mh || 0;
       // ---- 屋根だけ（ひさし・アーケード）
@@ -642,7 +672,7 @@ export class ParkModel {
         const par = b.big ? 0.6 : h < 7 ? 0.35 : 0.9;
         this.extrude(trims, cor, corY + 0.18, corY + par, () => (b.big ? wallC : trimC), null);
         const cap = flatGeo(cor, [], corY + par - 0.25, 1 / 4);
-        flats.add(cap, new THREE.Matrix4(), b.big ? ((b.s === 'fs' || b.s === 'lrd' || b.s === 'mi') ? col('#5d7448') : col('#c4beb2')) : roofC.clone().lerp(col('#c8c4ba'), 0.55));
+        flats.add(cap, new THREE.Matrix4(), b.big ? ((b.s === 'fs' || b.s === 'lrd' || b.s === 'mi') ? col('#5d7448') : col('#8f9a80')) : roofC.clone().lerp(col('#c8c4ba'), 0.55));
         // アラビアンコースト: 中くらいの建物の一部にドーム
         if (b.s === 'arab' && !b.big && A > 50 && A < 1500 && rnd() < 0.45) {
           const rad = Math.min(short * 0.32, 7);
@@ -670,6 +700,7 @@ export class ParkModel {
         this.buildingLabels.push({ text: b.n, pos: new THREE.Vector3(cx, h + 3, cz) });
       }
     }
+    this.buildNatural(natural);
     // メッシュにまとめる
     this.wallMats = {};
     for (const [st, acc] of Object.entries(walls)) {
@@ -685,6 +716,64 @@ export class ParkModel {
     this.mesh(trims.geo(), this.mat({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
     this.mesh(flats.geo(), this.mat({ map: this.tex.asphalt, vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
   }
+  // 大きな建物を山に見せる（雪山・サンゴの岩・ジャングルの岩山・低い丘）
+  buildNatural(list) {
+    const acc = new Acc();
+    const STY = {
+      snow: { H: 1.25, base: '#8e98a6', top: '#f4f8fc', green: null },
+      coral: { H: 1.05, base: '#c97f72', top: '#e9a693', green: '#7f9a52' },
+      jungle: { H: 1.1, base: '#7c7660', top: '#8a8470', green: '#4f7f36' },
+      rock: { H: 1.0, base: '#7a5442', top: '#8e6450', green: '#5f7444' },
+      hill: { H: 0.35, base: '#8a8a7a', top: '#8a8a7a', green: '#5d7d40' },
+    };
+    // 城・神殿のランドマークが上に建つ建物は、低い丘にする（ランドマークが埋もれないように）
+    const hosts = this.d.landmarks.filter((L) => L.k === 'castle_arendelle' || L.k === 'pyramid');
+    for (const it of list) {
+      const [cx, cz] = centroid(it.r);
+      if (hosts.some((L) => Math.hypot(L.x - cx, L.z - cz) < 45)) it.kind = 'hill';
+    }
+    for (const { b, r, kind } of list) {
+      const S = STY[kind];
+      const H = b.h * S.H;
+      const [cx, cz] = centroid(r);
+      const seed = cx * 0.37 + cz * 0.11;
+      const hfn = (x, z) => {
+        const de = distToRing(x, z, r);
+        let h = H * sm01(de / Math.min(14, H * 0.9)) * (0.72 + 0.5 * fbm(x * 0.06 + seed, z * 0.06));
+        h += (fbm(x * 0.25 + 3, z * 0.25) - 0.5) * 2.2 * sm01(de / 4);
+        // 外側の縁は切り立った岩壁にする（建物の壁の位置に合わせる）
+        if (de < 1.6) h = Math.max(h, Math.min(H * 0.55, 3 + de * 3));
+        const dp = this.pathIdx.dist(x, z);
+        if (dp < 3) h = Math.min(h, Math.max(0, (dp - 1.4) * 4));
+        return h;
+      };
+      const cb = col(S.base), ct = col(S.top), cg = S.green && col(S.green);
+      const colfn = (x, z, h, ny) => {
+        const n = fbm(x * 0.2, z * 0.2, 3);
+        let c = cb.clone().lerp(ct, Math.min(1, h / H));
+        if (kind === 'snow') { if (ny > 0.55 && h > H * 0.25) c = ct.clone().lerp(col('#dfe9f4'), n); }
+        else if (cg && ny > 0.6 && n > (kind === 'coral' ? 0.5 : 0.32)) c.lerp(cg, 0.85);
+        return c.multiplyScalar(0.85 + n * 0.3);
+      };
+      acc.append(heightfield(r, [], this.mobile ? 2.6 : 2.0, hfn, colfn, -0.2));
+      // 雪山の頂上は少し光らせる・ジャングルには木を足す
+      if (kind === 'jungle' || kind === 'hill' || kind === 'coral') {
+        const n = Math.floor(ringArea(r) / (kind === 'coral' ? 260 : 110));
+        const rr = T.rng(Math.round(cx * 7 + cz));
+        let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+        for (const [x, z] of r) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+        for (let k = 0, t = 0; k < n && t < n * 5; t++) {
+          const x = x0 + (x1 - x0) * rr(), z = z0 + (z1 - z0) * rr();
+          if (!pip(x, z, r) || distToRing(x, z, r) < 3) continue;
+          this.extraTrees.push([x, z, 0.8 + rr() * 0.6, kind === 'coral' ? 'ML' : b.p, Math.max(0, hfn(x, z) - 0.4)]);
+          k++;
+        }
+      }
+    }
+    if (!acc.count) return;
+    this.mesh(acc.geo(), this.mat({ map: this.tex.rock, vertexColors: true, roughness: 0.95, flatShading: true }));
+  }
+
   // 側面だけの帯（壁・手すり壁）
   extrude(acc, r, y0, y1, cf, uvf) {
     for (let i = 0; i < r.length; i++) {
@@ -797,7 +886,7 @@ export class ParkModel {
       const pts = ring(rb.p), w = rb.w / 2;
       if (pts.length < 2) continue;
       const mid = pts[Math.floor(pts.length / 2)];
-      const gray = col(PAL[this.portBy[this.portAt(mid[0], mid[1])]?.style || 'med'].plaza).lerp(col('#e2dccf'), 0.45);
+      const gray = col((PAVE[this.portAt(mid[0], mid[1])] || PAVE.MH).path);
       const bridge = rb.k === 2;
       // 橋はゆるいアーチ
       let tot = 0; const S = [0];
@@ -921,12 +1010,12 @@ export class ParkModel {
     const kinds = { palm: [], broad: [], conifer: [], cypress: [], pine: [], jungle: [] };
     const r = T.rng(77);
     const portKeys = this.d.ports.map((p) => p.key);
-    for (const t of this.d.trees) {
-      const [x, z, s, port] = t;
+    for (const t of [...this.d.trees, ...this.extraTrees]) {
+      const [x, z, s, port, y = 0] = t;
       const mix = mixes[port] || mixes.MH;
       let u = r(), k = 'broad';
       for (const [kk, w] of Object.entries(mix)) { if ((u -= w) <= 0) { k = kk; break; } }
-      kinds[k].push([x, z, s * (0.85 + r() * 0.4), r() * Math.PI * 2]);
+      kinds[k].push([x, z, s * (0.85 + r() * 0.4), r() * Math.PI * 2, y]);
     }
     const leafMat = this.mat({ vertexColors: true, roughness: 0.85, flatShading: true });
     leafMat.onBeforeCompile = (sh) => {
@@ -940,10 +1029,10 @@ export class ParkModel {
       const lm = new THREE.InstancedMesh(leafGeo, leafMat, list.length);
       const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
       const c = new THREE.Color();
-      list.forEach(([x, z, s, a], i) => {
+      list.forEach(([x, z, s, a, y], i) => {
         q.setFromAxisAngle(UP, a);
         sc.set(s, s * (0.9 + 0.2 * ((i * 7919) % 13) / 13), s);
-        p.set(x, 0, z);
+        p.set(x, y, z);
         m.compose(p, q, sc);
         tm.setMatrixAt(i, m); lm.setMatrixAt(i, m);
         // 色のばらつき（明るさと、少し黄色み）。offsetHSL は線形の色空間で働くので使わない
@@ -1005,8 +1094,8 @@ export class ParkModel {
       const tm = new THREE.InstancedMesh(pt, barkMat, kinds.palm.length);
       const lm = new THREE.InstancedMesh(palmLeaf, palmMat, kinds.palm.length);
       const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
-      kinds.palm.forEach(([x, z, s, a], i) => {
-        q.setFromAxisAngle(UP, a); sc.setScalar(s); p.set(x, 0, z); m.compose(p, q, sc);
+      kinds.palm.forEach(([x, z, s, a, y], i) => {
+        q.setFromAxisAngle(UP, a); sc.setScalar(s); p.set(x, y, z); m.compose(p, q, sc);
         tm.setMatrixAt(i, m); lm.setMatrixAt(i, m);
         lm.setColorAt(i, c.set('#5d8a3a').multiplyScalar(1 + (((i * 13) % 11) / 11 - 0.5) * 0.4).lerp(YEL, (((i * 31) % 17) / 17) * 0.15));
       });
@@ -1067,7 +1156,7 @@ export class ParkModel {
     for (const [m, kind] of this.nightMats) {
       if (kind === 'emissive') { m.emissive.set(on ? 0xffffff : 0x000000); m.emissiveIntensity = on ? 0.9 : 0; }
       else if (kind === 'lamp') m.emissiveIntensity = on ? 3.2 : 0.05;
-      else if (kind === 'glow') m.emissiveIntensity = on ? 2.5 : 0.2;
+      else if (kind === 'glow') m.emissiveIntensity = on ? 2.5 : 0.7;
     }
   }
 }
